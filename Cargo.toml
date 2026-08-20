@@ -1,0 +1,12 @@
+[package]
+name = "grand-music-cup"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.9", features = ["macros"] }
+clap = { version = "4.6.6", features = ["env", "derive"] }
+dotenvy = "0.15.7"
+rspotify = { version = "0.16.1", features = ["cli"] }
+serde = { version = "1.0.229", features = ["rc"] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
