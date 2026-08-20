@@ -7,6 +7,10 @@ edition = "2024"
 axum = { version = "0.8.9", features = ["macros"] }
 clap = { version = "4.6.6", features = ["env", "derive"] }
 dotenvy = "0.15.7"
+maud = { version = "0.27.0", features = ["axum", "axum-core"] }
 rspotify = { version = "0.16.1", features = ["cli"] }
 serde = { version = "1.0.229", features = ["rc"] }
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite"] }
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
+url = "2.5.8"
+urlencoding = "2.1.3"

@@ -1,0 +1,133 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "github:NixOS/nixpkgs/nixpkgs-unstable": {
+      "last_modified": "2026-08-19T20:44:59Z",
+      "resolved": "github:NixOS/nixpkgs/07e1d92cdc0ed416cfa11ff3ca40d17e61cfba7a?lastModified=1787172299&narHash=sha256-PShzS87awOlE5XWkxUGBd%2F58%2FF%2BAtE2ZMgFffKj4r8s%3D"
+    },
+    "sqls@latest": {
+      "last_modified": "2026-08-12T11:28:58Z",
+      "resolved": "github:NixOS/nixpkgs/044bfe75bfe4c7bbe043dc17b5e42ea823b84a09#sqls",
+      "source": "devbox-search",
+      "version": "0.2.48",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/b7idp9lz8nqxz7i0nsfmcbav7qygi7qx-sqls-0.2.48",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/b7idp9lz8nqxz7i0nsfmcbav7qygi7qx-sqls-0.2.48"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lidm006cja6ggr0k1y1mbmicp16wlsqr-sqls-0.2.48",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lidm006cja6ggr0k1y1mbmicp16wlsqr-sqls-0.2.48"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/l0w8bmmc56hfqazphgy5j3lxjz8qadh5-sqls-0.2.48",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/l0w8bmmc56hfqazphgy5j3lxjz8qadh5-sqls-0.2.48"
+        }
+      }
+    },
+    "sqlx-cli@latest": {
+      "last_modified": "2026-08-12T11:28:58Z",
+      "resolved": "github:NixOS/nixpkgs/044bfe75bfe4c7bbe043dc17b5e42ea823b84a09#sqlx-cli",
+      "source": "devbox-search",
+      "version": "0.9.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/8nnlsh8mcjmyrap8k1y5dapk25zsh7qb-sqlx-cli-0.9.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/8nnlsh8mcjmyrap8k1y5dapk25zsh7qb-sqlx-cli-0.9.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/3ih3qjnd2iacwxcmy6sk2xhvzdh7yndk-sqlx-cli-0.9.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/3ih3qjnd2iacwxcmy6sk2xhvzdh7yndk-sqlx-cli-0.9.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/i98djias3pmzkdrqdgdqs2l6pvb5r83p-sqlx-cli-0.9.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/i98djias3pmzkdrqdgdqs2l6pvb5r83p-sqlx-cli-0.9.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/rn0qz6mwapzpp7lyl1vwkd8q06h6sf2r-sqlx-cli-0.9.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/rn0qz6mwapzpp7lyl1vwkd8q06h6sf2r-sqlx-cli-0.9.0"
+        }
+      }
+    },
+    "sqruff@latest": {
+      "last_modified": "2026-08-12T11:28:58Z",
+      "resolved": "github:NixOS/nixpkgs/044bfe75bfe4c7bbe043dc17b5e42ea823b84a09#sqruff",
+      "source": "devbox-search",
+      "version": "0.39.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/vwpf4risr1ndyci0z7k6ni0avvf5q81x-sqruff-0.39.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/vwpf4risr1ndyci0z7k6ni0avvf5q81x-sqruff-0.39.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/nk5aw4aigak118lfg2b8kyxp0hnrjhmp-sqruff-0.39.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/nk5aw4aigak118lfg2b8kyxp0hnrjhmp-sqruff-0.39.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zw71yzlbwcy5hwvqknwvyfldjib2r0b7-sqruff-0.39.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zw71yzlbwcy5hwvqknwvyfldjib2r0b7-sqruff-0.39.0"
+        }
+      }
+    }
+  }
+}

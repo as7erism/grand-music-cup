@@ -1,0 +1,4 @@
+# sqls config
+connections:
+  - driver: sqlite3
+    dataSourceName: sqlite:gmc.db
