@@ -7,154 +7,24 @@ use axum::{
     response::{Html, IntoResponse},
     routing::get,
 };
+use axum_extra::extract::cookie::{Cookie, SameSite};
 use chrono::Days;
 use jsonwebtoken::{EncodingKey, Header, encode};
-use maud::{Markup, Render};
+use maud::{Markup, Render, html};
+use reqwest::header::{ACCESS_CONTROL_ALLOW_ORIGIN, SET_COOKIE};
 use serde::{Deserialize, Serialize};
 use serenity::all::User;
 use sqlx::SqlitePool;
 use strum::EnumString;
 
-use crate::DISCORD_URL;
+use crate::{AuthTokenClaims, DISCORD_URI, DiscordSignUpTokenClaims};
+
+mod html;
+mod json;
+mod union;
 
 const AUTH_TOKEN_EXPIRATION: Days = Days::new(7);
 const DISCORD_SIGN_UP_TOKEN_EXPIRATION: Days = Days::new(1);
-
-#[derive(Clone, Copy, Debug, EnumString, Deserialize)]
-enum ApiResponseKind {
-    #[serde(rename = "json")]
-    #[strum(serialize = "json")]
-    Json,
-    #[serde(rename = "html")]
-    #[strum(serialize = "html")]
-    Html,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct BasicJsonResponse {
-    message: String,
-}
-
-trait IntoApiSuccess<J, H>
-where
-    J: Serialize,
-    H: IntoResponse,
-{
-    fn into_json(self) -> (J, Option<StatusCode>, Vec<(HeaderName, HeaderValue)>);
-    fn into_html(self) -> (H, Option<StatusCode>, Vec<(HeaderName, HeaderValue)>);
-
-    fn into_api_success(self, response_kind: ApiResponseKind) -> ApiSuccess<J, H>
-    where
-        Self: Sized,
-    {
-        match response_kind {
-            ApiResponseKind::Json => {
-                let (json, status, headers) = self.into_json();
-                ApiSuccess::Json((json, status.unwrap_or(StatusCode::OK), headers))
-            }
-            ApiResponseKind::Html => {
-                let (html, status, headers) = self.into_html();
-                ApiSuccess::Html((html, status.unwrap_or(StatusCode::OK), headers))
-            }
-        }
-    }
-}
-
-trait IntoApiFailure<J, H>
-where
-    J: Serialize,
-    H: IntoResponse,
-{
-    fn into_json(self) -> (J, Option<StatusCode>, Vec<(HeaderName, HeaderValue)>);
-    fn into_html(self) -> (H, Option<StatusCode>, Vec<(HeaderName, HeaderValue)>);
-
-    fn into_api_failure(self, response_kind: ApiResponseKind) -> ApiFailure<J, H>
-    where
-        Self: Sized,
-    {
-        match response_kind {
-            ApiResponseKind::Json => {
-                let (json, status, headers) = self.into_json();
-                ApiFailure::Json((json, status.unwrap_or(StatusCode::BAD_REQUEST), headers))
-            }
-            ApiResponseKind::Html => {
-                let (html, status, headers) = self.into_html();
-                ApiFailure::Html((html, status.unwrap_or(StatusCode::BAD_REQUEST), headers))
-            }
-        }
-    }
-}
-
-enum ApiSuccess<J, H>
-where
-    J: Serialize,
-    H: IntoResponse,
-{
-    Json((J, StatusCode, Vec<(HeaderName, HeaderValue)>)),
-    Html((H, StatusCode, Vec<(HeaderName, HeaderValue)>)),
-}
-
-enum ApiFailure<J, H>
-where
-    J: Serialize,
-    H: IntoResponse,
-{
-    Json((J, StatusCode, Vec<(HeaderName, HeaderValue)>)),
-    Html((H, StatusCode, Vec<(HeaderName, HeaderValue)>)),
-}
-
-type ApiResult<Js, Hs, Jf, Hf> = Result<ApiSuccess<Js, Hs>, ApiFailure<Jf, Hf>>;
-
-impl<J, H> IntoResponse for ApiSuccess<J, H>
-where
-    J: Serialize,
-    H: IntoResponse,
-{
-    fn into_response(self) -> axum::response::Response {
-        match self {
-            Self::Json((json, code, headers)) => {
-                let mut response = Json::from(json).into_response();
-                *response.status_mut() = code;
-                response.headers_mut().extend(headers);
-                response
-            }
-            Self::Html((html, code, headers)) => {
-                let mut response = Html::from(html).into_response();
-                *response.status_mut() = code;
-                response.headers_mut().extend(headers);
-                response
-            }
-        }
-    }
-}
-
-impl<J, H> IntoResponse for ApiFailure<J, H>
-where
-    J: Serialize,
-    H: IntoResponse,
-{
-    fn into_response(self) -> axum::response::Response {
-        match self {
-            Self::Json((json, code, headers)) => {
-                let mut response = Json::from(json).into_response();
-                *response.status_mut() = code;
-                response.headers_mut().extend(headers);
-                response
-            }
-            Self::Html((html, code, headers)) => {
-                let mut response = Html::from(html).into_response();
-                *response.status_mut() = code;
-                response.headers_mut().extend(headers);
-                response
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct JsonError {
-    message: String,
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
@@ -166,75 +36,28 @@ pub enum ApiError {
     DatabaseError(#[from] sqlx::Error),
 }
 
-impl IntoApiFailure<JsonError, Markup> for ApiError {
-    fn into_json(
-        self,
-    ) -> (
-        JsonError,
-        Option<StatusCode>,
-        Vec<(HeaderName, HeaderValue)>,
-    ) {
-        (
-            JsonError {
-                message: format!("{self}"),
-            },
-            None,
-            vec![],
-        )
+#[derive(Clone, Serialize)]
+struct ErrorAsJson {
+    message: String,
+}
+
+impl ApiError {
+    fn into_json(self) -> (StatusCode, Json<ErrorAsJson>) {
+        match self {
+            _ => (StatusCode::BAD_REQUEST, Json::from(ErrorAsJson { message: format!{"{self}"} }))
+        }
     }
 
-    fn into_html(self) -> (Markup, Option<StatusCode>, Vec<(HeaderName, HeaderValue)>) {
-        (format!("{self}").render(), None, vec![])
+    fn into_html(self) -> (StatusCode, Html<Markup>) {
+        match self {
+            _ => (StatusCode::BAD_REQUEST, Html::from(html! { (self) }))
+        }
     }
 }
 
-// #[derive(Debug, thiserror::Error, Serialize)]
-// pub enum HtmlApiError {
-//     #[error("authorization code missing")]
-//     AuthorizationCodeMissing,
-// }
-//
-// #[derive(Debug, thiserror::Error, Serialize)]
-// pub enum JsonApiError {
-//     #[error("authorization code missing")]
-//     AuthorizationCodeMissing,
-// }
-//
-// impl IntoResponse for HtmlApiError {
-//     fn into_response(self) -> axum::response::Response {
-//         match self {
-//             Self::AuthorizationCodeMissing => {
-//                 let mut response = html! { "authorization code missing" }.into_response();
-//                 *response.status_mut() = StatusCode::BAD_REQUEST;
-//                 response
-//             }
-//         }
-//     }
-// }
-//
-// impl IntoResponse for JsonApiError {
-//     fn into_response(self) -> axum::response::Response {
-//         #[derive(Debug, Serialize)]
-//         struct ErrorJson {
-//             message: String,
-//         }
-//
-//         match self {
-//             Self::AuthorizationCodeMissing => {
-//                 let mut response = Json::from(ErrorJson {
-//                     message: "authorization code missing".to_string(),
-//                 })
-//                 .into_response();
-//                 *response.status_mut() = StatusCode::BAD_REQUEST;
-//                 response
-//             }
-//         }
-//     }
-// }
-
 #[derive(Clone)]
 pub struct ApiState {
-    pub server_address: Arc<str>,
+    pub server_uri: Arc<str>,
     pub discord_authorization_callback_url: Arc<str>,
     pub discord_client_id: Arc<str>,
     pub discord_client_secret: Arc<str>,
@@ -266,13 +89,32 @@ impl IntoApiSuccess<AuthorizeDiscordResponse, Markup> for AuthorizeDiscordRespon
 
     fn into_html(self) -> (Markup, Option<StatusCode>, Vec<(HeaderName, HeaderValue)>) {
         (
-            self.message.render(),
-            Some(StatusCode::FOUND),
+            html! {
+                html {
+                    head {
+                        meta http-equiv="refresh" content="0; url='http://127.0.0.1:8464/sign-up/discord" {}
+                    }
+                    body {}
+                }
+            },
+            // self.message.render(),
+            Some(StatusCode::OK),
             vec![
-                (LOCATION, HeaderValue::from_str(&self.next_location)
-                    .expect("the location header value should not have non-visible ascii characters; we are creating it!")
-                )
-            ]
+                (
+                    SET_COOKIE,
+                    HeaderValue::from_str(
+                        &Cookie::build(("token", &self.token))
+                            .same_site(SameSite::Strict)
+                            .path("/")
+                            .build()
+                            .to_string(),
+                    )
+                    .inspect(|c| println!("{c:?}"))
+                    .unwrap(),
+                    // HeaderValue::from_str(&format!("token={}", self.token))
+                    //     .expect("the token should not have non-visible ascii characters"),
+                ),
+            ],
         )
     }
 }
@@ -291,14 +133,10 @@ async fn authorize_discord(
     #[derive(Deserialize)]
     struct AccessTokenResponse {
         access_token: String,
-        token_type: String,
-        expires_in: u32,
-        refresh_token: String,
-        scope: String,
     }
 
     let response = reqwest::Client::new()
-        .post(format!("{DISCORD_URL}/api/oauth2/token"))
+        .post(format!("{DISCORD_URI}/api/oauth2/token"))
         .form(&[
             ("grant_type", "authorization_code"),
             ("code", code),
@@ -318,7 +156,7 @@ async fn authorize_discord(
         .map_err(|e| ApiError::from(e).into_api_failure(kind))?;
 
     let user = reqwest::Client::new()
-        .get(format!("{DISCORD_URL}/api/users/@me"))
+        .get(format!("{DISCORD_URI}/api/users/@me"))
         .bearer_auth(response.access_token)
         .send()
         .await
@@ -332,12 +170,12 @@ async fn authorize_discord(
         .inspect_err(|e| println!("{e}"))
         .map_err(|e| ApiError::from(e).into_api_failure(kind))?;
 
-    if let Some(record) = sqlx::query!(
+    Ok(if let Some(record) = sqlx::query!(
         "
-SELECT id, discord_id
-FROM users
-WHERE discord_id = ?
-",
+    SELECT id, discord_id
+    FROM users
+    WHERE discord_id = ?
+    ",
         user.id.get() as i64
     )
     .fetch_optional(&state.pool)
@@ -345,9 +183,9 @@ WHERE discord_id = ?
     .map_err(|e| ApiError::from(e).into_api_failure(kind))?
     {
         // this account has already been set up
-        Ok(AuthorizeDiscordResponse {
+        AuthorizeDiscordResponse {
             message: "signed in :3".to_string(),
-            next_location: state.server_address.to_string(),
+            next_location: state.server_uri.to_string(),
             token: encode(
                 &Header::default(),
                 &AuthTokenClaims {
@@ -358,11 +196,10 @@ WHERE discord_id = ?
             )
             .expect("im  tired"),
         }
-        .into_api_success(kind))
     } else {
-        Ok(AuthorizeDiscordResponse {
+        AuthorizeDiscordResponse {
             message: "continue!".to_string(),
-            next_location: format!("{}/sign-up/discord", state.server_address),
+            next_location: format!("{}/sign-up/discord", state.server_uri),
             token: encode(
                 &Header::default(),
                 &DiscordSignUpTokenClaims {
@@ -376,20 +213,6 @@ WHERE discord_id = ?
             )
             .expect("im  tired"),
         }
-        .into_api_success(kind))
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct DiscordSignUpTokenClaims {
-    exp: usize,
-    sub: i64,
-    username: String,
-    avatar_hash: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct AuthTokenClaims {
-    exp: usize,
-    sub: i64,
+    .into_api_success(kind))
 }

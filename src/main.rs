@@ -1,25 +1,39 @@
-use axum::{Router, extract::State, routing::method_routing::get};
+use axum::{
+    Router,
+    extract::{Request, State},
+    http::{HeaderValue, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::method_routing::get,
+};
+use axum_extra::extract::CookieJar;
 use base64::prelude::*;
-use clap::Parser;
-use maud::{Markup, html};
+use clap::{Args, Parser};
+use grand_music_cup::generate_secret;
+use jsonwebtoken::{DecodingKey, Validation, decode};
+use maud::{Markup, Render, html};
 use rand::{
     SeedableRng, TryRng,
     rngs::{StdRng, SysRng},
 };
 use rspotify::{AuthCodeSpotify, Credentials, OAuth, clients::OAuthClient};
+use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::{error::Error, sync::Arc};
+use tower_http::cors::CorsLayer;
 use url::Url;
 
-use crate::api::{ApiState, init_api};
+use crate::{api::{ApiState, init_api}, spotify::ClientConfig};
 
 mod api;
+mod app;
+mod discord;
+mod spotify;
 
-const DISCORD_URL: &str = "https://discord.com";
+const DISCORD_URI: &str = "https://discord.com";
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct Args {
+struct Cli {
     /// The Spotify client ID
     #[arg(short = 'i', long, env = "SPOTIFY_CLIENT_ID")]
     spotify_client_id: String,
@@ -36,18 +50,18 @@ struct Args {
     #[arg(short = 'e', long, env = "DISCORD_CLIENT_SECRET")]
     discord_client_secret: String,
 
-    /// The OAuth callback address (must match Spotify App configuration)
+    /// The OAuth callback URL (must match Spotify App configuration)
     #[arg(
         short = 'o',
         long,
-        env = "OAUTH_CALLBACK_ADDRESS",
-        default_value = "127.0.0.1:8463"
+        env = "OAUTH_CALLBACK_URL",
+        default_value = "http://127.0.0.1:8463"
     )]
-    oauth_callback_address: String,
+    spotify_oauth_callback_url: String,
 
     /// The code used to get an access token for the Spotify client
-    #[arg(short = 'u', long, env = "AUTHORIZATION_CODE")]
-    authorization_code: Option<String>,
+    #[arg(short = 'u', long, env = "SPOTIFY_AUTHORIZATION_CODE")]
+    spotify_authorization_code: Option<String>,
 
     /// The live server address
     #[arg(
@@ -56,7 +70,10 @@ struct Args {
         env = "SERVER_ADDRESS",
         default_value = "127.0.0.1:8464"
     )]
-    server_address: String,
+    server_adddress: String,
+
+    #[command(flatten)]
+    https_config: Option<HttpsConfig>,
 
     /// The database connection string
     #[arg(short, long, env = "DATABASE_URL")]
@@ -71,49 +88,48 @@ struct Args {
     generate_secret: bool,
 }
 
+#[derive(Args)]
+#[group(required=true)]
+struct HttpsConfig {
+    #[arg(short = 't', long, required=true)]
+    cert_file: String,
+
+    #[arg(short, long, required=true)]
+    key_file: String,
+}
+
 #[derive(Clone, Debug)]
 struct AppState {
     pool: SqlitePool,
+    jwt_secret: Arc<[u8]>,
     discord_authorization_url: Arc<str>,
 }
 
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     dotenvy::dotenv()?;
-    let args = Args::parse();
+    let args = Cli::parse();
 
     if args.generate_secret {
-        let mut buffer: [u8; 32] = [0; 32];
-        let mut rng = StdRng::try_from_rng(&mut SysRng)?;
-        rng.try_fill_bytes(&mut buffer)?;
-        println!("{}", BASE64_STANDARD.encode(buffer));
+        println!("{}", generate_secret());
         return Ok(());
     }
 
-    let Some(jwt_secret) = args.jwt_secret else {
+    let Some(jwt_secret) = args.jwt_secret.map(|secret| Arc::from(BASE64_STANDARD.decode(secret).expect("could not decode JWT secret as base64"))) else {
         panic!("jwt secret is required; generate one with --generate-secret");
     };
-    let jwt_secret = BASE64_STANDARD.decode(jwt_secret)?;
 
-    let oauth = OAuth {
-        redirect_uri: format!("http://{}", args.oauth_callback_address),
-        scopes: ["playlist-modify-public".into()].into(),
-        ..Default::default()
-    };
-    let credentials = Credentials::new(&args.spotify_client_id, &args.spotify_client_secret);
-    let client = Arc::new(AuthCodeSpotify::new(credentials, oauth));
+    let spotify_client = ClientConfig {
+        client_id: args.spotify_client_id,
+        client_secret: args.spotify_client_secret,
+        oauth_callback_url: args.spotify_oauth_callback_url,
+        authorization_code: args.spotify_authorization_code,
+    }.into_client();
 
-    let code = match args.authorization_code {
-        Some(code) => code,
-        None => client.get_code_from_user(&client.get_authorize_url(true)?)?,
-    };
-    println!("{code}");
-    client.request_token(&code).await?;
+    let server_url: Arc<str> = Arc::from(format!("{}://{}", if args.https_config.is_some() {"https"} else {"http"}, args.server_adddress.clone()));
 
-    let discord_authorization_callback_url = Arc::from(format!(
-        "http://{}/api/html/authorize/discord",
-        args.server_address
-    ));
+    let discord_authorization_callback_url =
+        Arc::from(format!("{}/api/html/authorize/discord", server_url.clone()));
     let discord_authorization_url = Arc::from(build_discord_authorization_url(
         &args.discord_client_id,
         &["identify"],
@@ -128,22 +144,25 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let state = AppState {
         pool: pool.clone(),
+        jwt_secret: jwt_secret.clone(),
         discord_authorization_url,
     };
 
     let routes = Router::new()
         .route("/", get(root))
+        .route("/sign-up/discord", get(discord_signup))
         .with_state(state)
         .nest("/api", init_api())
         .with_state(ApiState {
             discord_authorization_callback_url,
             discord_client_id: Arc::from(args.discord_client_id),
             discord_client_secret: Arc::from(args.discord_client_secret),
-            server_address: Arc::from(args.server_address.clone()),
-            jwt_secret: Arc::from(jwt_secret),
+            server_url,
+            jwt_secret,
             pool,
         });
-    let listener = tokio::net::TcpListener::bind(args.server_address).await?;
+    // .route_layer(CorsLayer::new().allow_credentials(true).allow_origin("http://127.0.0.1:8464".parse::<HeaderValue>().unwrap()));
+    let listener = tokio::net::TcpListener::bind(args.server_adddress).await?;
     axum::serve(listener, routes).await?;
 
     Ok(())
@@ -157,21 +176,80 @@ fn build_discord_authorization_url(
 ) -> Result<String, Box<dyn Error + Send + Sync>> {
     let scopes = scopes.join(" ");
     let mut params = vec![
-        ("response_type", "code"),
         ("client_id", client_id),
-        ("scope", &scopes),
+        ("response_type", "code"),
         ("redirect_uri", callback_url),
+        ("scope", &scopes),
     ];
 
     if let Some(state) = state {
         params.push(("state", state));
     }
 
-    Ok(Url::parse_with_params(&format!("{DISCORD_URL}/oauth2/authorize"), &params)?.to_string())
+    Ok(
+        Url::parse_with_params(&format!("{DISCORD_URI}/oauth2/authorize"), &params)
+            .inspect(|u| println!("{u}"))?
+            .to_string(),
+    )
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DiscordSignUpTokenClaims {
+    exp: usize,
+    sub: i64,
+    username: String,
+    avatar_hash: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AuthTokenClaims {
+    exp: usize,
+    sub: i64,
 }
 
 async fn root(State(state): State<AppState>) -> Markup {
     html! {
         a href=(state.discord_authorization_url) { "discord auth" }
     }
+}
+
+async fn discord_signup(
+    cookies: CookieJar,
+    State(state): State<AppState>,
+    req: Request,
+) -> Result<Markup, (StatusCode, Markup)> {
+    let error_markup = html! {
+        a href=(state.discord_authorization_url) { "try again" }
+    };
+
+    println!("{:?}", req.headers());
+    let hi = decode::<DiscordSignUpTokenClaims>(
+        cookies
+            .get("token")
+            .map(|cookie| cookie.value().to_string())
+            .ok_or((
+                StatusCode::UNAUTHORIZED,
+                html! {
+                    p {
+                        "no cookie."
+                        a href=(state.discord_authorization_url) { "try again" }
+                    }
+                },
+            ))?,
+        &DecodingKey::from_secret(&state.jwt_secret),
+        &Validation::default(),
+    )
+    .inspect_err(|e| println!("{e}"))
+    .map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            html! {
+                    p {
+                        "could not decode token."
+                        a href=(state.discord_authorization_url) { "try again" }
+                    }
+            },
+        )
+    })?;
+    Ok(format!("{:?}", hi.claims).render())
 }
