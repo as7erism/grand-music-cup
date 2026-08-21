@@ -1,4 +1,4 @@
-use axum::{Router, extract::State, http::Uri, routing::method_routing::get};
+use axum::{Router, extract::State, routing::method_routing::get};
 use base64::prelude::*;
 use clap::Parser;
 use maud::{Markup, html};
@@ -7,9 +7,11 @@ use rand::{
     rngs::{StdRng, SysRng},
 };
 use rspotify::{AuthCodeSpotify, Credentials, OAuth, clients::OAuthClient};
+use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::{error::Error, sync::Arc};
-use url::{Url, form_urlencoded};
-use urlencoding::encode;
+use url::Url;
+
+use crate::api::{ApiState, init_api};
 
 mod api;
 
@@ -71,7 +73,7 @@ struct Args {
 
 #[derive(Clone, Debug)]
 struct AppState {
-    discord_authorization_callback_url: Arc<str>,
+    pool: SqlitePool,
     discord_authorization_url: Arc<str>,
 }
 
@@ -119,12 +121,28 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         None,
     )?);
 
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect(&args.database_url)
+        .await?;
+
     let state = AppState {
-        discord_authorization_callback_url,
+        pool: pool.clone(),
         discord_authorization_url,
     };
 
-    let routes = Router::new().route("/", get(root)).with_state(state);
+    let routes = Router::new()
+        .route("/", get(root))
+        .with_state(state)
+        .nest("/api", init_api())
+        .with_state(ApiState {
+            discord_authorization_callback_url,
+            discord_client_id: Arc::from(args.discord_client_id),
+            discord_client_secret: Arc::from(args.discord_client_secret),
+            server_address: Arc::from(args.server_address.clone()),
+            jwt_secret: Arc::from(jwt_secret),
+            pool,
+        });
     let listener = tokio::net::TcpListener::bind(args.server_address).await?;
     axum::serve(listener, routes).await?;
 

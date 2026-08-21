@@ -2,17 +2,17 @@ use std::{collections::HashMap, error::Error, sync::Arc};
 
 use axum::{
     Json, Router, debug_handler,
-    extract::{FromRequestParts, Path, Query, Request, State},
+    extract::{Path, Query, Request, State},
     http::{HeaderName, HeaderValue, StatusCode, header::LOCATION},
     response::{Html, IntoResponse},
     routing::get,
 };
-use chrono::{Days, Duration};
-use jsonwebtoken::{encode, decode, Header, Extras, Algorithm, Validation, EncodingKey, DecodingKey};
-use maud::{Markup, Render, html};
+use chrono::Days;
+use jsonwebtoken::{EncodingKey, Header, encode};
+use maud::{Markup, Render};
 use serde::{Deserialize, Serialize};
 use serenity::all::User;
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::SqlitePool;
 use strum::EnumString;
 
 use crate::DISCORD_URL;
@@ -22,8 +22,10 @@ const DISCORD_SIGN_UP_TOKEN_EXPIRATION: Days = Days::new(1);
 
 #[derive(Clone, Copy, Debug, EnumString, Deserialize)]
 enum ApiResponseKind {
+    #[serde(rename = "json")]
     #[strum(serialize = "json")]
     Json,
+    #[serde(rename = "html")]
     #[strum(serialize = "html")]
     Html,
 }
@@ -172,21 +174,17 @@ impl IntoApiFailure<JsonError, Markup> for ApiError {
         Option<StatusCode>,
         Vec<(HeaderName, HeaderValue)>,
     ) {
-        match self {
-            _ => (
-                JsonError {
-                    message: format!("{self}"),
-                },
-                None,
-                vec![],
-            ),
-        }
+        (
+            JsonError {
+                message: format!("{self}"),
+            },
+            None,
+            vec![],
+        )
     }
 
     fn into_html(self) -> (Markup, Option<StatusCode>, Vec<(HeaderName, HeaderValue)>) {
-        match self {
-            _ => (format!("{self}").render(), None, vec![]),
-        }
+        (format!("{self}").render(), None, vec![])
     }
 }
 
@@ -235,15 +233,17 @@ impl IntoApiFailure<JsonError, Markup> for ApiError {
 // }
 
 #[derive(Clone)]
-struct ApiState {
-    server_address: Arc<str>,
-    discord_authorization_callback_url: Arc<str>,
-    jwt_secret: Arc<[u8]>,
-    pool: SqlitePool,
+pub struct ApiState {
+    pub server_address: Arc<str>,
+    pub discord_authorization_callback_url: Arc<str>,
+    pub discord_client_id: Arc<str>,
+    pub discord_client_secret: Arc<str>,
+    pub jwt_secret: Arc<[u8]>,
+    pub pool: SqlitePool,
 }
 
-pub async fn init_api() -> Result<Router<ApiState>, Box<dyn Error + Send + Sync>> {
-    Ok(Router::new().route("/{kind}/authorize/discord", get(authorize_discord)))
+pub fn init_api() -> Router<ApiState> {
+    Router::new().route("/{kind}/authorize/discord", get(authorize_discord))
 }
 
 #[derive(Debug, Serialize)]
@@ -282,7 +282,7 @@ async fn authorize_discord(
     Path(kind): Path<ApiResponseKind>,
     Query(params): Query<HashMap<String, String>>,
     State(state): State<ApiState>,
-    request: Request,
+    _request: Request,
 ) -> ApiResult<AuthorizeDiscordResponse, Markup, JsonError, Markup> {
     let code = params
         .get("code")
@@ -298,19 +298,23 @@ async fn authorize_discord(
     }
 
     let response = reqwest::Client::new()
-        .post(&format!("{DISCORD_URL}/api/oauth2/token"))
+        .post(format!("{DISCORD_URL}/api/oauth2/token"))
         .form(&[
             ("grant_type", "authorization_code"),
-            ("code", &code),
+            ("code", code),
             ("redirect_uri", &state.discord_authorization_callback_url),
         ])
+        .basic_auth(state.discord_client_id, Some(state.discord_client_secret))
         .send()
         .await
+        .inspect_err(|e| println!("{e}"))
         .map_err(|e| ApiError::from(e).into_api_failure(kind))?
         .error_for_status()
+        .inspect_err(|e| println!("{e}"))
         .map_err(|e| ApiError::from(e).into_api_failure(kind))?
         .json::<AccessTokenResponse>()
         .await
+        .inspect_err(|e| println!("{e}"))
         .map_err(|e| ApiError::from(e).into_api_failure(kind))?;
 
     let user = reqwest::Client::new()
@@ -318,11 +322,14 @@ async fn authorize_discord(
         .bearer_auth(response.access_token)
         .send()
         .await
+        .inspect_err(|e| println!("{e}"))
         .map_err(|e| ApiError::from(e).into_api_failure(kind))?
         .error_for_status()
+        .inspect_err(|e| println!("{e}"))
         .map_err(|e| ApiError::from(e).into_api_failure(kind))?
         .json::<User>()
         .await
+        .inspect_err(|e| println!("{e}"))
         .map_err(|e| ApiError::from(e).into_api_failure(kind))?;
 
     if let Some(record) = sqlx::query!(
@@ -332,31 +339,45 @@ FROM users
 WHERE discord_id = ?
 ",
         user.id.get() as i64
-    ).fetch_optional(&state.pool).await.map_err(|e| ApiError::from(e).into_api_failure(kind))? {
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| ApiError::from(e).into_api_failure(kind))?
+    {
         // this account has already been set up
         Ok(AuthorizeDiscordResponse {
             message: "signed in :3".to_string(),
             next_location: state.server_address.to_string(),
-            token: encode(&Header::default(), &AuthTokenClaims {
-                exp: (chrono::Utc::now() + AUTH_TOKEN_EXPIRATION).timestamp() as usize,
-                sub: record.id
-            }, &EncodingKey::from_secret(&state.jwt_secret)).expect("im  tired")
-        }.into_api_success(kind))
+            token: encode(
+                &Header::default(),
+                &AuthTokenClaims {
+                    exp: (chrono::Utc::now() + AUTH_TOKEN_EXPIRATION).timestamp() as usize,
+                    sub: record.id,
+                },
+                &EncodingKey::from_secret(&state.jwt_secret),
+            )
+            .expect("im  tired"),
+        }
+        .into_api_success(kind))
     } else {
         Ok(AuthorizeDiscordResponse {
             message: "continue!".to_string(),
             next_location: format!("{}/sign-up/discord", state.server_address),
-            token: encode(&Header::default(), &DiscordSignUpTokenClaims {
-                exp: (chrono::Utc::now() + DISCORD_SIGN_UP_TOKEN_EXPIRATION).timestamp() as usize,
-                sub: user.id.get() as i64,
-                username: user.name,
-                avatar_hash: user.avatar.map(|h| h.to_string()),
-            }, &EncodingKey::from_secret(&state.jwt_secret)).expect("im  tired")
-        }.into_api_success(kind))
+            token: encode(
+                &Header::default(),
+                &DiscordSignUpTokenClaims {
+                    exp: (chrono::Utc::now() + DISCORD_SIGN_UP_TOKEN_EXPIRATION).timestamp()
+                        as usize,
+                    sub: user.id.get() as i64,
+                    username: user.name,
+                    avatar_hash: user.avatar.map(|h| h.to_string()),
+                },
+                &EncodingKey::from_secret(&state.jwt_secret),
+            )
+            .expect("im  tired"),
+        }
+        .into_api_success(kind))
     }
-
-    
-
 }
 
 #[derive(Debug, Serialize, Deserialize)]
