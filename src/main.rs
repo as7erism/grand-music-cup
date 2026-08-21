@@ -1,14 +1,17 @@
 use axum::{Router, extract::State, http::Uri, routing::method_routing::get};
+use base64::prelude::*;
 use clap::Parser;
 use maud::{Markup, html};
+use rand::{
+    SeedableRng, TryRng,
+    rngs::{StdRng, SysRng},
+};
 use rspotify::{AuthCodeSpotify, Credentials, OAuth, clients::OAuthClient};
-use urlencoding::encode;
 use std::{error::Error, sync::Arc};
 use url::{Url, form_urlencoded};
+use urlencoding::encode;
 
-use crate::get_code::get_code;
-
-mod get_code;
+mod api;
 
 const DISCORD_URL: &str = "https://discord.com";
 
@@ -24,7 +27,7 @@ struct Args {
     spotify_client_secret: String,
 
     /// The Discord client ID
-    #[arg(short = 'd', long, env = "DISCORD_CLIENT_ID")]
+    #[arg(short = 'r', long, env = "DISCORD_CLIENT_ID")]
     discord_client_id: String,
 
     /// The Discord client secret
@@ -52,10 +55,23 @@ struct Args {
         default_value = "127.0.0.1:8464"
     )]
     server_address: String,
+
+    /// The database connection string
+    #[arg(short, long, env = "DATABASE_URL")]
+    database_url: String,
+
+    /// The JWT secret seed, base64-encoded
+    #[arg(short, long, env = "JWT_SECRET")]
+    jwt_secret: Option<String>,
+
+    /// If enabled, program will generate a suitable JWT secret seed and exit
+    #[arg(short, long)]
+    generate_secret: bool,
 }
 
 #[derive(Clone, Debug)]
 struct AppState {
+    discord_authorization_callback_url: Arc<str>,
     discord_authorization_url: Arc<str>,
 }
 
@@ -63,6 +79,19 @@ struct AppState {
 pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     dotenvy::dotenv()?;
     let args = Args::parse();
+
+    if args.generate_secret {
+        let mut buffer: [u8; 32] = [0; 32];
+        let mut rng = StdRng::try_from_rng(&mut SysRng)?;
+        rng.try_fill_bytes(&mut buffer)?;
+        println!("{}", BASE64_STANDARD.encode(buffer));
+        return Ok(());
+    }
+
+    let Some(jwt_secret) = args.jwt_secret else {
+        panic!("jwt secret is required; generate one with --generate-secret");
+    };
+    let jwt_secret = BASE64_STANDARD.decode(jwt_secret)?;
 
     let oauth = OAuth {
         redirect_uri: format!("http://{}", args.oauth_callback_address),
@@ -79,15 +108,20 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("{code}");
     client.request_token(&code).await?;
 
+    let discord_authorization_callback_url = Arc::from(format!(
+        "http://{}/api/html/authorize/discord",
+        args.server_address
+    ));
     let discord_authorization_url = Arc::from(build_discord_authorization_url(
         &args.discord_client_id,
         &["identify"],
-        &format!("http://{}/discord/authorize", args.server_address),
+        &discord_authorization_callback_url,
         None,
     )?);
 
     let state = AppState {
-        discord_authorization_url
+        discord_authorization_callback_url,
+        discord_authorization_url,
     };
 
     let routes = Router::new().route("/", get(root)).with_state(state);
@@ -115,10 +149,7 @@ fn build_discord_authorization_url(
         params.push(("state", state));
     }
 
-    Ok(Url::parse_with_params(
-        &format!("{DISCORD_URL}/oauth2/authorize"),
-        &params,
-    )?.to_string())
+    Ok(Url::parse_with_params(&format!("{DISCORD_URL}/oauth2/authorize"), &params)?.to_string())
 }
 
 async fn root(State(state): State<AppState>) -> Markup {

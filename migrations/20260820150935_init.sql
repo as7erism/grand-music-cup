@@ -2,12 +2,12 @@
 CREATE TABLE IF NOT EXISTS users
 (
   id INTEGER PRIMARY KEY NOT NULL,
-  username TEXT NOT NULL,
+  username TEXT UNIQUE NOT NULL,
 
-  discord_id TEXT,
-  discord_refresh_token TEXT,
-  discord_token_expiry_timestamp INTEGER,
+  discord_id TEXT UNIQUE,
+  discord_username TEXT,
+  discord_avatar_hash TEXT,
 
   salt TEXT,
-  password_hash TEXT,
+  password_hash TEXT
 );
