@@ -19,17 +19,18 @@ use rspotify::{AuthCodeSpotify, Credentials, OAuth, clients::OAuthClient};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::{error::Error, sync::Arc};
-use tower_http::cors::CorsLayer;
 use url::Url;
 
-use crate::{api::{ApiState, init_api}, spotify::ClientConfig};
+use crate::{
+    api::{ApiState, init_api},
+    spotify::ClientConfig,
+};
 
 mod api;
 mod app;
 mod discord;
 mod spotify;
-
-const DISCORD_URI: &str = "https://discord.com";
+mod user;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -89,12 +90,12 @@ struct Cli {
 }
 
 #[derive(Args)]
-#[group(required=true)]
+#[group(required = true)]
 struct HttpsConfig {
-    #[arg(short = 't', long, required=true)]
+    #[arg(short = 't', long, required = true)]
     cert_file: String,
 
-    #[arg(short, long, required=true)]
+    #[arg(short, long, required = true)]
     key_file: String,
 }
 
@@ -115,7 +116,13 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         return Ok(());
     }
 
-    let Some(jwt_secret) = args.jwt_secret.map(|secret| Arc::from(BASE64_STANDARD.decode(secret).expect("could not decode JWT secret as base64"))) else {
+    let Some(jwt_secret) = args.jwt_secret.map(|secret| {
+        Arc::from(
+            BASE64_STANDARD
+                .decode(secret)
+                .expect("could not decode JWT secret as base64"),
+        )
+    }) else {
         panic!("jwt secret is required; generate one with --generate-secret");
     };
 
@@ -124,9 +131,18 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         client_secret: args.spotify_client_secret,
         oauth_callback_url: args.spotify_oauth_callback_url,
         authorization_code: args.spotify_authorization_code,
-    }.into_client();
+    }
+    .into_client();
 
-    let server_url: Arc<str> = Arc::from(format!("{}://{}", if args.https_config.is_some() {"https"} else {"http"}, args.server_adddress.clone()));
+    let server_url: Arc<str> = Arc::from(format!(
+        "{}://{}",
+        if args.https_config.is_some() {
+            "https"
+        } else {
+            "http"
+        },
+        args.server_adddress.clone()
+    ));
 
     let discord_authorization_callback_url =
         Arc::from(format!("{}/api/html/authorize/discord", server_url.clone()));
@@ -166,39 +182,6 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     axum::serve(listener, routes).await?;
 
     Ok(())
-}
-
-fn build_discord_authorization_url(
-    client_id: &str,
-    scopes: &[&str],
-    callback_url: &str,
-    state: Option<&str>,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let scopes = scopes.join(" ");
-    let mut params = vec![
-        ("client_id", client_id),
-        ("response_type", "code"),
-        ("redirect_uri", callback_url),
-        ("scope", &scopes),
-    ];
-
-    if let Some(state) = state {
-        params.push(("state", state));
-    }
-
-    Ok(
-        Url::parse_with_params(&format!("{DISCORD_URI}/oauth2/authorize"), &params)
-            .inspect(|u| println!("{u}"))?
-            .to_string(),
-    )
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct DiscordSignUpTokenClaims {
-    exp: usize,
-    sub: i64,
-    username: String,
-    avatar_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

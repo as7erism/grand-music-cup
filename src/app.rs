@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use sqlx::SqlitePool;
+use thiserror::Error;
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -10,6 +11,7 @@ pub struct AppState {
     discord_authorization_url: Arc<str>,
 }
 
-pub fn routes() -> Router<AppState> {
+#[derive(Clone, Debug, Error)]
+pub enum AppError {}
 
-}
+pub fn routes() -> Router<AppState> {}

@@ -1,12 +1,13 @@
 use std::iter::{Empty, empty};
 
-use axum::{Json, response::{Html, IntoResponse}};
+use axum::{
+    Json,
+    response::{Html, IntoResponse},
+};
 use http::{HeaderName, HeaderValue, StatusCode};
-use maud::Markup;
+use maud::{Markup, html};
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
-
-use crate::api::{ApiError, ErrorAsJson};
 
 #[derive(Clone, Copy, Debug, EnumString, Deserialize)]
 enum UnionResponseKind {
@@ -22,7 +23,7 @@ enum UnionResponse<J, H, I = Empty<(HeaderName, HeaderValue)>>
 where
     J: Serialize,
     H: IntoResponse,
-    I: IntoIterator<Item = (HeaderName, HeaderValue)>
+    I: IntoIterator<Item = (HeaderName, HeaderValue)>,
 {
     Json((StatusCode, J, I)),
     Html((StatusCode, H, I)),
@@ -78,15 +79,25 @@ where
     }
 }
 
-impl IntoUnionResponse<ErrorAsJson, Markup> for ApiError {
+#[derive(Debug, thiserror::Error)]
+pub enum UnionApiError {}
+
+#[derive(Clone, Serialize)]
+struct ErrorAsJson {
+    message: String,
+}
+
+impl IntoUnionResponse<ErrorAsJson, Markup> for UnionApiError {
     fn into_json(self) -> (StatusCode, ErrorAsJson, Empty<(HeaderName, HeaderValue)>) {
-        let (status, json) = self.into_json();
-        (status, json.0, empty())
+        match self {
+            _ => (StatusCode::BAD_REQUEST, ErrorAsJson { message: format!("{self}") }, empty()),
+        }
     }
 
     fn into_html(self) -> (StatusCode, Markup, Empty<(HeaderName, HeaderValue)>) {
-        let (status, html) = self.into_html();
-        (status, html.0, empty())
+        match self {
+            _ => (StatusCode::BAD_REQUEST, html! ( (self) ), empty()),
+        }
     }
 }
 

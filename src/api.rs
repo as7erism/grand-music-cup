@@ -44,13 +44,18 @@ struct ErrorAsJson {
 impl ApiError {
     fn into_json(self) -> (StatusCode, Json<ErrorAsJson>) {
         match self {
-            _ => (StatusCode::BAD_REQUEST, Json::from(ErrorAsJson { message: format!{"{self}"} }))
+            _ => (
+                StatusCode::BAD_REQUEST,
+                Json::from(ErrorAsJson {
+                    message: format! {"{self}"},
+                }),
+            ),
         }
     }
 
     fn into_html(self) -> (StatusCode, Html<Markup>) {
         match self {
-            _ => (StatusCode::BAD_REQUEST, Html::from(html! { (self) }))
+            _ => (StatusCode::BAD_REQUEST, Html::from(html! { (self) })),
         }
     }
 }
@@ -99,22 +104,20 @@ impl IntoApiSuccess<AuthorizeDiscordResponse, Markup> for AuthorizeDiscordRespon
             },
             // self.message.render(),
             Some(StatusCode::OK),
-            vec![
-                (
-                    SET_COOKIE,
-                    HeaderValue::from_str(
-                        &Cookie::build(("token", &self.token))
-                            .same_site(SameSite::Strict)
-                            .path("/")
-                            .build()
-                            .to_string(),
-                    )
-                    .inspect(|c| println!("{c:?}"))
-                    .unwrap(),
-                    // HeaderValue::from_str(&format!("token={}", self.token))
-                    //     .expect("the token should not have non-visible ascii characters"),
-                ),
-            ],
+            vec![(
+                SET_COOKIE,
+                HeaderValue::from_str(
+                    &Cookie::build(("token", &self.token))
+                        .same_site(SameSite::Strict)
+                        .path("/")
+                        .build()
+                        .to_string(),
+                )
+                .inspect(|c| println!("{c:?}"))
+                .unwrap(),
+                // HeaderValue::from_str(&format!("token={}", self.token))
+                //     .expect("the token should not have non-visible ascii characters"),
+            )],
         )
     }
 }
