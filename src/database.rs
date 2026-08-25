@@ -23,7 +23,7 @@ pub struct User {
 
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize)]
-pub struct UserWithPassword {
+struct UserWithPassword {
     id: i64,
     display_name: String,
     discord_id: Option<String>,
@@ -181,6 +181,22 @@ impl User {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn id(&self) -> i64 {
+        self.id
+    }
+
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    pub fn login_name(&self) -> Option<&str> {
+        self.login_name.as_ref().map(|s| s.as_str())
+    }
+
+    pub fn discord_id(&self) -> Option<&str> {
+        self.discord_id.as_ref().map(|s| s.as_str())
     }
 }
 

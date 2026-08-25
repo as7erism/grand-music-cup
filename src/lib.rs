@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 #[derive(Clone, Copy, Debug)]
 pub struct U10(u16);
 
@@ -17,4 +19,11 @@ impl U10 {
     pub fn as_u16(&self) -> u16 {
         self.0
     }
+}
+
+pub fn current_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("current time should be after unix epoch")
+        .as_millis()
 }

@@ -7,6 +7,7 @@ use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use tokio::task::{JoinError, JoinSet};
 
 use crate::{
+    auth::Auth,
     discord::DiscordClient,
     snowflake::SnowflakeManager,
     spotify::{SpotifyClient, SpotifyClientConfig},
@@ -74,7 +75,7 @@ struct Config {
     jwt_secret: Option<String>,
 
     /// The epoch as milliseconds since the unix epoch
-    #[arg(short, long, env = "EPOCH_MS", default_value_t = 1787681355986)]
+    #[arg(short = 'p', long, env = "EPOCH_MS", default_value_t = 1787681355986)]
     epoch_ms: u64,
 
     /// The machine ID (should fit within 10 bits)
@@ -87,12 +88,12 @@ struct Config {
 }
 
 #[derive(Args, Debug)]
-#[group(required = true)]
+#[group(required = false)]
 pub struct HttpsConfig {
-    #[arg(short = 't', long, required = true)]
+    #[arg(short = 't', long, required = false)]
     pub cert_file: String,
 
-    #[arg(short, long, required = true)]
+    #[arg(short, long, required = false)]
     pub key_file: String,
 }
 
@@ -101,7 +102,7 @@ pub struct WebConfig {
     pub spotify_client: SpotifyClient,
     pub pool: SqlitePool,
     pub snowflake_manager: SnowflakeManager,
-    pub jwt_secret: Box<[u8]>,
+    pub auth: Auth,
     pub server_url: Box<str>,
 }
 
@@ -148,16 +149,17 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
 
     let snowflake_manager = SnowflakeManager::new(
         config.epoch_ms,
-        U10::new(config.machine_id).expect("TODO this should be a result"),
+        U10::new(config.machine_id).expect("machine id overflow; TODO this should be a result"),
     )?;
 
     let jwt_secret = BASE64_STANDARD
         .decode(
             config
                 .jwt_secret
-                .expect("TODO this should be mapped to a result"),
+                .expect("secret missing; TODO this should be mapped to a result"),
         )?
         .into_boxed_slice();
+    let auth = Auth::new(jwt_secret);
 
     let server_url = if config.https_config.is_some() {
         format! {"https://{}", config.server_address}.into_boxed_str()
@@ -170,7 +172,7 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
         discord_client,
         pool,
         snowflake_manager,
-        jwt_secret,
+        auth,
         server_url,
     };
 

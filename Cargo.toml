@@ -19,10 +19,10 @@ rand = { version = "0.10.2", features = ["std_rng"] }
 reqwest = { version = "0.13.4", features = ["form", "json"] }
 rspotify = { version = "0.16.1", features = ["cli"] }
 serde = { version = "1.0.229", features = ["rc"] }
-serenity = "0.12.5"
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite"] }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.20"
+time = "0.3.55"
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
 tower-http = { version = "0.7.0", features = ["cors"] }
 url = "2.5.8"

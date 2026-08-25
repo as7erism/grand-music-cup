@@ -9,6 +9,7 @@ use crate::{
     web::{WebState, app},
 };
 
+mod auth;
 mod config;
 mod crypto;
 mod database;
@@ -18,7 +19,7 @@ mod spotify;
 mod web;
 
 const SECRET_LEN: usize = 32;
-pub const APP_PATH: &str = "/";
+pub const APP_PATH: &str = "";
 pub const API_PATH: &str = "/api";
 
 #[tokio::main]
@@ -35,7 +36,7 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
 
     let routes = Router::new()
-        .nest(APP_PATH, app::routes())
+        .merge(app::routes())
         // .nest(API_PATH, api::routes())
         .with_state(Arc::new(WebState {
             config: web_config,

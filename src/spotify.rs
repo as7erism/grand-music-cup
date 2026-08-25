@@ -33,7 +33,7 @@ impl SpotifyClient {
         SpotifyError,
     > {
         let oauth = OAuth {
-            redirect_uri: format!("http://{}", config.oauth_callback_url),
+            redirect_uri: config.oauth_callback_url,
             scopes: SCOPES
                 .iter()
                 .map(|s| s.to_string())
