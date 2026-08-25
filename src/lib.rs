@@ -1,3 +1,4 @@
+#[derive(Clone, Copy, Debug)]
 pub struct U10(u16);
 
 impl U10 {

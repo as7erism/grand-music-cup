@@ -1,4 +1,8 @@
-use argon2::{Algorithm::Argon2d, Argon2, PasswordHasher, password_hash};
+use argon2::{
+    Algorithm::Argon2d,
+    Argon2, PasswordHasher,
+    password_hash::{self, Salt, SaltString},
+};
 use base64::prelude::*;
 use rand::rngs::StdRng;
 use serde::Deserialize;
@@ -34,7 +38,13 @@ pub enum DatabaseError {
     #[error("sql error: {0}")]
     SqlError(#[from] sqlx::Error),
     #[error("password hash error: {0}")]
-    PasswordHashError(#[from] password_hash::Error),
+    PasswordHashError(password_hash::Error),
+}
+
+impl From<password_hash::Error> for DatabaseError {
+    fn from(value: password_hash::Error) -> Self {
+        DatabaseError::PasswordHashError(value)
+    }
 }
 
 pub enum UserId<'a> {
@@ -110,7 +120,7 @@ impl User {
             display_name,
             discord_id
         )
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await?)
     }
 
@@ -124,7 +134,7 @@ impl User {
     ) -> Result<Self, DatabaseError> {
         let salt = BASE64_STANDARD.encode(random_bytes::<SALT_LEN>(rng));
         let password_hash = Argon2::default()
-            .hash_password(password.as_bytes(), &salt)?
+            .hash_password(password.as_bytes(), Salt::from_b64(&salt)?)?
             .to_string();
         Ok(sqlx::query_as!(
             Self,
@@ -139,7 +149,7 @@ impl User {
             password_hash,
             salt,
         )
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await?)
     }
 
@@ -154,16 +164,19 @@ impl User {
 
         if user
             .password_hash
+            .as_ref()
             .expect("login name should always have associated password hash")
-            == Argon2::default().hash_password(
-                password.as_bytes(),
-                BASE64_STANDARD
-                    .decode(
+            == Argon2::default()
+                .hash_password(
+                    password.as_bytes(),
+                    Salt::from_b64(
                         user.salt
+                            .as_ref()
                             .expect("login name should always have associated salt"),
-                    )
-                    .expect("salt should always be base64-encoded"),
-            )?
+                    )?,
+                )?
+                .to_string()
+                .as_str()
         {
             Ok(Some(user.into()))
         } else {

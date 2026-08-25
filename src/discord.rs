@@ -12,7 +12,7 @@ pub struct DiscordClient {
     pub client_secret: String,
 }
 
-#[derive(Clone, Debug, Error)]
+#[derive(Debug, Error)]
 pub enum DiscordError {
     #[error("Discord API Error: {0}")]
     ApiError(#[from] reqwest::Error),
@@ -75,7 +75,7 @@ impl DiscordClient {
                 ("code", code),
                 ("redirect_uri", callback_url),
             ])
-            .basic_auth(self.client_id, Some(self.client_secret))
+            .basic_auth(&self.client_id, Some(&self.client_secret))
             .send()
             .await?
             .error_for_status()?

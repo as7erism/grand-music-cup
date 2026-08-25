@@ -5,6 +5,7 @@ use clap::{Args, Parser};
 use grand_music_cup::U10;
 use rspotify::AuthCodeSpotify;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use tokio::task::{JoinError, JoinSet};
 
 use crate::{
     discord::DiscordClient,
@@ -50,7 +51,7 @@ struct Config {
         short = 'f',
         long,
         env = "SPOTIFY_REFRESH_INTERVAL_MINUTES",
-        default_value = 30
+        default_value_t = 30
     )]
     spotify_refresh_interval_minutes: u64,
 
@@ -61,7 +62,7 @@ struct Config {
         env = "SERVER_ADDRESS",
         default_value = "127.0.0.1:8464"
     )]
-    server_adddress: String,
+    server_address: String,
 
     #[command(flatten)]
     https_config: Option<HttpsConfig>,
@@ -75,11 +76,11 @@ struct Config {
     jwt_secret: Option<String>,
 
     /// The epoch as milliseconds since the unix epoch
-    #[arg(short, long, env = "EPOCH_MS", default_value = 1787681355986)]
+    #[arg(short, long, env = "EPOCH_MS", default_value_t = 1787681355986)]
     epoch_ms: u64,
 
     /// The machine ID (should fit within 10 bits)
-    #[arg(short, long, env = "MACHINE_ID", default_value = 0)]
+    #[arg(short, long, env = "MACHINE_ID", default_value_t = 0)]
     machine_id: u16,
 
     /// If enabled, program will generate a suitable JWT secret seed and exit
@@ -87,7 +88,7 @@ struct Config {
     generate_secret: bool,
 }
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 #[group(required = true)]
 struct HttpsConfig {
     #[arg(short = 't', long, required = true)]
@@ -106,7 +107,8 @@ pub struct WebConfig {
     pub server_url: Box<str>,
 }
 
-struct ServerConfig {
+pub struct ServerConfig {
+    pub server_address: Box<str>,
     pub https_config: Option<HttpsConfig>,
 }
 
@@ -118,7 +120,7 @@ pub enum Mode {
         (
             WebConfig,
             ServerConfig,
-            Vec<Box<dyn Future<Output = Result<Infallible, Box<dyn Error + Send + Sync>>>>>,
+            JoinSet<Result<Result<Infallible, Box<dyn Error + Send + Sync>>, JoinError>>,
         ),
     ),
 }
@@ -138,7 +140,7 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
 
     let spotify_client_config = SpotifyClientConfig {
         client_id: config.spotify_client_id,
-        client_secret: config.discord_client_secret,
+        client_secret: config.spotify_client_secret,
         oauth_callback_url: config.spotify_oauth_callback_url,
         authorization_code: config.spotify_authorization_code,
         refresh_interval: Duration::from_mins(config.spotify_refresh_interval_minutes),
@@ -150,16 +152,23 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
         .connect(&config.database_url)
         .await?;
 
-    let snowflake_manager = SnowflakeManager::new(config.epoch_ms, U10::new(config.machine_id)?)?;
+    let snowflake_manager = SnowflakeManager::new(
+        config.epoch_ms,
+        U10::new(config.machine_id).expect("TODO this should be a result"),
+    )?;
 
     let jwt_secret = BASE64_STANDARD
-        .decode(config.jwt_secret?)?
+        .decode(
+            config
+                .jwt_secret
+                .expect("TODO this should be mapped to a result"),
+        )?
         .into_boxed_slice();
 
     let server_url = if config.https_config.is_some() {
-        format! {"https://{}", config.server_adddress}.into_boxed_str()
+        format! {"https://{}", config.server_address}.into_boxed_str()
     } else {
-        format! {"http://{}", config.server_adddress}.into_boxed_str()
+        format! {"http://{}", config.server_address}.into_boxed_str()
     };
 
     let web_config = WebConfig {
@@ -172,12 +181,12 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
     };
 
     let server_config = ServerConfig {
+        server_address: config.server_address.into_boxed_str(),
         https_config: config.https_config,
     };
 
-    let join_handles: Vec<
-        Box<dyn Future<Output = Result<Infallible, Box<dyn Error + Send + Sync>>>>,
-    > = vec![Box::new(spotify_client_handle)];
+    let join_set: JoinSet<Result<Result<Infallible, Box<dyn Error + Send + Sync>>, JoinError>> =
+        [Box::new(spotify_client_handle)].into_iter().collect();
 
-    Ok(Mode::WebServer((web_config, server_config, join_handles)))
+    Ok(Mode::WebServer((web_config, server_config, join_set)))
 }

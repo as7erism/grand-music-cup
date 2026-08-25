@@ -27,7 +27,7 @@ pub struct SnowflakeManager {
 }
 
 impl SnowflakeManager {
-    pub const fn new(epoch: u64, machine_id: U10) -> Result<Self, SnowflakeError> {
+    pub fn new(epoch: u64, machine_id: U10) -> Result<Self, SnowflakeError> {
         if epoch
             > SystemTime::now()
                 .duration_since(UNIX_EPOCH)

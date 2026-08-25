@@ -8,7 +8,7 @@ use rspotify::{
 use thiserror::Error;
 use tokio::{task::JoinHandle, time::interval};
 
-pub const SCOPES: HashSet<String> = HashSet::from(String::from("playlist-modify-public"));
+const SCOPES: [&str; 1] = ["playlist-modify-public"];
 
 #[derive(Debug, Error)]
 pub enum SpotifyError {
@@ -34,7 +34,10 @@ impl SpotifyClient {
     > {
         let oauth = OAuth {
             redirect_uri: format!("http://{}", config.oauth_callback_url),
-            scopes: SCOPES,
+            scopes: SCOPES
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<HashSet<String>>(),
             ..Default::default()
         };
         let credentials = Credentials::new(&config.client_id, &config.client_secret);
@@ -49,7 +52,7 @@ impl SpotifyClient {
         let client_clone = client.clone();
         let wrapped = Self { inner: client };
 
-        let handle = tokio::spawn(async {
+        let handle = tokio::spawn(async move {
             client_clone.refresh_token().await?;
 
             let mut interval = interval(config.refresh_interval);
