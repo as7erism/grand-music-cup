@@ -157,8 +157,10 @@ impl User {
             .expect("login name should always have associated password hash")
             == Argon2::default().hash_password(
                 password.as_bytes(),
-                user.salt
-                    .expect("login name should always have associated salt"),
+                BASE64_STANDARD.decode(
+                    user.salt
+                        .expect("login name should always have associated salt"),
+                ).expect("salt should always be base64-encoded"),
             )?
         {
             Ok(Some(user.into()))
@@ -170,13 +172,11 @@ impl User {
 
 impl UserWithPassword {
     async fn fetch(login_name: &str, pool: &SqlitePool) -> Result<Option<Self>, DatabaseError> {
-        Ok(sqlx::query_as!(
-            Self,
-            "SELECT * FROM users WHERE login_name = ?",
-            login_name
+        Ok(
+            sqlx::query_as!(Self, "SELECT * FROM users WHERE login_name = ?", login_name)
+                .fetch_optional(pool)
+                .await?,
         )
-        .fetch_optional(pool)
-        .await?)
     }
 }
 
