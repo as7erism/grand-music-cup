@@ -28,9 +28,11 @@ use crate::{
 
 mod api;
 mod app;
+mod crypto;
+mod database;
 mod discord;
+mod snowflake;
 mod spotify;
-mod user;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

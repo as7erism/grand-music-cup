@@ -90,14 +90,19 @@ struct ErrorAsJson {
 impl IntoUnionResponse<ErrorAsJson, Markup> for UnionApiError {
     fn into_json(self) -> (StatusCode, ErrorAsJson, Empty<(HeaderName, HeaderValue)>) {
         match self {
-            _ => (StatusCode::BAD_REQUEST, ErrorAsJson { message: format!("{self}") }, empty()),
+            _ => (
+                StatusCode::BAD_REQUEST,
+                ErrorAsJson {
+                    message: format!("{self}"),
+                },
+                empty(),
+            ),
         }
     }
 
     fn into_html(self) -> (StatusCode, Markup, Empty<(HeaderName, HeaderValue)>) {
         match self {
-            _ => (StatusCode::BAD_REQUEST, html! ( (self) ), empty()),
+            _ => (StatusCode::BAD_REQUEST, html!((self)), empty()),
         }
     }
 }
-
