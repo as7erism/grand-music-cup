@@ -8,17 +8,13 @@ use axum::{
 };
 use http::StatusCode;
 use maud::{Markup, html};
-use rand::rngs::StdRng;
-use rspotify::sync::Mutex;
 use serde::Deserialize;
-use sqlx::SqlitePool;
 use thiserror::Error;
 
 use crate::{
     APP_PATH,
     database::{DatabaseError, User, UserId},
     discord::{DiscordError, DiscordUser},
-    snowflake::SnowflakeManager,
     web::WebState,
 };
 

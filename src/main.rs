@@ -1,31 +1,12 @@
-use axum::{
-    Router,
-    extract::{Request, State},
-    http::{HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Response},
-    routing::method_routing::get,
-};
-use axum_extra::extract::CookieJar;
+use axum::Router;
 use base64::prelude::*;
-use clap::{Args, Parser};
-use jsonwebtoken::{DecodingKey, Validation, decode};
-use maud::{Markup, Render, html};
-use rand::{
-    SeedableRng, TryRng,
-    rngs::{StdRng, SysRng},
-};
-use rspotify::{AuthCodeSpotify, Credentials, OAuth, clients::OAuthClient};
-use serde::{Deserialize, Serialize};
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::{error::Error, process::exit, sync::Arc};
 use tokio::sync::Mutex;
-use url::Url;
 
 use crate::{
     config::Mode,
     crypto::{init_rng, random_bytes},
-    spotify::SpotifyClientConfig,
-    web::{WebState, api, app},
+    web::{WebState, app},
 };
 
 mod config;

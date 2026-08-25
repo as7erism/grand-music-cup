@@ -3,7 +3,6 @@ use std::{convert::Infallible, error::Error, time::Duration};
 use base64::prelude::*;
 use clap::{Args, Parser};
 use grand_music_cup::U10;
-use rspotify::AuthCodeSpotify;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use tokio::task::{JoinError, JoinSet};
 
@@ -11,7 +10,6 @@ use crate::{
     discord::DiscordClient,
     snowflake::SnowflakeManager,
     spotify::{SpotifyClient, SpotifyClientConfig},
-    web,
 };
 
 #[derive(Parser, Debug)]
@@ -90,12 +88,12 @@ struct Config {
 
 #[derive(Args, Debug)]
 #[group(required = true)]
-struct HttpsConfig {
+pub struct HttpsConfig {
     #[arg(short = 't', long, required = true)]
-    cert_file: String,
+    pub cert_file: String,
 
     #[arg(short, long, required = true)]
-    key_file: String,
+    pub key_file: String,
 }
 
 pub struct WebConfig {
@@ -114,15 +112,11 @@ pub struct ServerConfig {
 
 pub struct CliConfig {}
 
+pub type TaskJoinSet = JoinSet<Result<Result<Infallible, Box<dyn Error + Send + Sync>>, JoinError>>;
+
 pub enum Mode {
     Cli(CliConfig),
-    WebServer(
-        (
-            WebConfig,
-            ServerConfig,
-            JoinSet<Result<Result<Infallible, Box<dyn Error + Send + Sync>>, JoinError>>,
-        ),
-    ),
+    WebServer((WebConfig, ServerConfig, TaskJoinSet)),
 }
 
 pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
@@ -185,8 +179,7 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
         https_config: config.https_config,
     };
 
-    let join_set: JoinSet<Result<Result<Infallible, Box<dyn Error + Send + Sync>>, JoinError>> =
-        [Box::new(spotify_client_handle)].into_iter().collect();
+    let join_set: TaskJoinSet = [Box::new(spotify_client_handle)].into_iter().collect();
 
     Ok(Mode::WebServer((web_config, server_config, join_set)))
 }

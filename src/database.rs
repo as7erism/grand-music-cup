@@ -1,7 +1,6 @@
 use argon2::{
-    Algorithm::Argon2d,
     Argon2, PasswordHasher,
-    password_hash::{self, Salt, SaltString},
+    password_hash::{self, Salt},
 };
 use base64::prelude::*;
 use rand::rngs::StdRng;

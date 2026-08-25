@@ -3,7 +3,7 @@ use std::{collections::HashSet, convert::Infallible, sync::Arc, time::Duration};
 use rspotify::{
     AuthCodeSpotify, ClientError, Credentials, OAuth,
     clients::{BaseClient, OAuthClient},
-    model::{IdError, UserId},
+    model::IdError,
 };
 use thiserror::Error;
 use tokio::{task::JoinHandle, time::interval};

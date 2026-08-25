@@ -1,8 +1,5 @@
-use std::fmt::Display;
-
-use base64::prelude::*;
 use rand::{
-    SeedableRng, TryCryptoRng, TryRng, rand_core,
+    SeedableRng, TryRng,
     rngs::{StdRng, SysRng},
 };
 
