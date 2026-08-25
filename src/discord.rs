@@ -20,10 +20,23 @@ pub enum DiscordError {
 
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize)]
-pub struct User {
-    id: String,
-    username: String,
-    avatar: String,
+pub struct DiscordUser {
+    pub id: String,
+    pub username: String,
+    pub avatar: String,
+}
+
+impl DiscordUser {
+    pub async fn get(token: &str) -> Result<Self, DiscordError> {
+        Ok(reqwest::Client::new()
+            .get(format!("{DISCORD_URL}/api/users/@me"))
+            .bearer_auth(token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<DiscordUser>()
+            .await?)
+    }
 }
 
 impl DiscordClient {
@@ -69,16 +82,5 @@ impl DiscordClient {
             .json::<AccessTokenResponse>()
             .await?
             .access_token)
-    }
-
-    pub async fn get_user(token: &str) -> Result<User, DiscordError> {
-        Ok(reqwest::Client::new()
-            .get(format!("{DISCORD_URL}/api/users/@me"))
-            .bearer_auth(token)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<User>()
-            .await?)
     }
 }

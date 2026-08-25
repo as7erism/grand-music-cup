@@ -157,10 +157,12 @@ impl User {
             .expect("login name should always have associated password hash")
             == Argon2::default().hash_password(
                 password.as_bytes(),
-                BASE64_STANDARD.decode(
-                    user.salt
-                        .expect("login name should always have associated salt"),
-                ).expect("salt should always be base64-encoded"),
+                BASE64_STANDARD
+                    .decode(
+                        user.salt
+                            .expect("login name should always have associated salt"),
+                    )
+                    .expect("salt should always be base64-encoded"),
             )?
         {
             Ok(Some(user.into()))

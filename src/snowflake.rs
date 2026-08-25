@@ -1,10 +1,11 @@
 use std::{
     sync::atomic::{AtomicU16, Ordering},
-    time::SystemTime,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use chrono::{DateTime, Utc};
 use grand_music_cup::U10;
+use thiserror::Error;
 
 const TIMESTAMP_BITS: usize = 41;
 const SNOWFLAKE_COUNTER_BITS: usize = 12;
@@ -12,18 +13,31 @@ const SNOWFLAKE_COUNTER_MAX: u16 = 0xFFF;
 
 static SNOWFLAKE_COUNTER: AtomicU16 = AtomicU16::new(0);
 
+// TODO revamp this api
+
+#[derive(Debug, Error)]
+pub enum SnowflakeError {
+    #[error("epoch should not be in the future")]
+    EpochInFuture,
+}
+
 pub struct SnowflakeManager {
-    epoch: DateTime<Utc>,
+    epoch: u64,
     machine_id: U10,
 }
 
 impl SnowflakeManager {
-    pub const fn new(epoch: DateTime<Utc>, machine_id: U10) -> Self {
-        if epoch > DateTime::<Utc>::from(SystemTime::now()) {
-            panic!("given epoch should be before the current time");
+    pub const fn new(epoch: u64, machine_id: U10) -> Result<Self, SnowflakeError> {
+        if epoch
+            > SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("current time should be after unix epoch")
+                .as_millis() as u64
+        {
+            Err(SnowflakeError::EpochInFuture)
+        } else {
+            Ok(Self { epoch, machine_id })
         }
-
-        Self { epoch, machine_id }
     }
 
     pub fn make_snowflake(&self) -> i64 {
@@ -33,8 +47,11 @@ impl SnowflakeManager {
             if c == SNOWFLAKE_COUNTER_MAX { 0 } else { c + 1 }
         });
 
-        let timestamp = DateTime::<Utc>::from(SystemTime::now()).timestamp_millis()
-            - self.epoch.timestamp_millis();
+        let timestamp = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("current time should be after unix epoch")
+            .as_millis() as u64
+            - self.epoch) as i64;
         if timestamp <= 0 {
             panic!("given epoch should be before the current time");
         }
@@ -51,10 +68,8 @@ impl SnowflakeManager {
         value
     }
 
-    pub fn parse_timestamp(&self, snowflake: i64) -> Option<DateTime<Utc>> {
-        DateTime::<Utc>::from_timestamp_millis(
-            (snowflake & i64::MAX) >> (U10::BITS + SNOWFLAKE_COUNTER_BITS),
-        )
+    pub fn parse_timestamp(&self, snowflake: i64) -> u64 {
+        ((snowflake & i64::MAX) >> (U10::BITS + SNOWFLAKE_COUNTER_BITS)) as u64
     }
 
     pub fn parse_machine_id(&self, snowflake: i64) -> U10 {
@@ -65,5 +80,13 @@ impl SnowflakeManager {
 
     pub fn parse_counter(&self, snowflake: i64) -> u16 {
         (snowflake & SNOWFLAKE_COUNTER_MAX as i64) as u16
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    pub fn machine_id(&self) -> U10 {
+        self.machine_id
     }
 }

@@ -1,32 +1,72 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, convert::Infallible, sync::Arc, time::Duration};
 
-use rspotify::{AuthCodeSpotify, ClientError, Credentials, OAuth, clients::OAuthClient};
+use rspotify::{
+    AuthCodeSpotify, ClientError, Credentials, OAuth,
+    clients::{BaseClient, OAuthClient},
+    model::{IdError, UserId},
+};
+use thiserror::Error;
+use tokio::{task::JoinHandle, time::interval};
 
 pub const SCOPES: HashSet<String> = HashSet::from(String::from("playlist-modify-public"));
 
-pub struct ClientConfig {
-    pub client_id: String,
-    pub client_secret: String,
-    pub oauth_callback_url: String,
-    pub authorization_code: Option<String>,
+#[derive(Debug, Error)]
+pub enum SpotifyError {
+    #[error("client error: {0}")]
+    ClientError(#[from] ClientError),
+    #[error("id error: {0}")]
+    IdError(#[from] IdError),
 }
 
-impl ClientConfig {
-    pub async fn into_client(self) -> Result<AuthCodeSpotify, ClientError> {
+pub struct SpotifyClient {
+    inner: Arc<AuthCodeSpotify>,
+}
+
+impl SpotifyClient {
+    pub async fn new(
+        config: SpotifyClientConfig,
+    ) -> Result<
+        (
+            Self,
+            JoinHandle<Result<Infallible, Box<dyn std::error::Error + Send + Sync>>>,
+        ),
+        SpotifyError,
+    > {
         let oauth = OAuth {
-            redirect_uri: format!("http://{}", self.oauth_callback_url),
-            scopes: ["playlist-modify-public".into()].into(),
+            redirect_uri: format!("http://{}", config.oauth_callback_url),
+            scopes: SCOPES,
             ..Default::default()
         };
-        let credentials = Credentials::new(&self.client_id, &self.client_secret);
-        let client = AuthCodeSpotify::new(credentials, oauth);
+        let credentials = Credentials::new(&config.client_id, &config.client_secret);
+        let client = Arc::new(AuthCodeSpotify::new(credentials, oauth));
 
-        let code = match self.authorization_code {
+        let code = match config.authorization_code {
             Some(code) => code,
             None => client.get_code_from_user(&client.get_authorize_url(true)?)?,
         };
         client.request_token(&code).await?;
 
-        Ok(client)
+        let client_clone = client.clone();
+        let wrapped = Self { inner: client };
+
+        let handle = tokio::spawn(async {
+            client_clone.refresh_token().await?;
+
+            let mut interval = interval(config.refresh_interval);
+            loop {
+                interval.tick().await;
+                client_clone.refresh_token().await?;
+            }
+        });
+
+        Ok((wrapped, handle))
     }
+}
+
+pub struct SpotifyClientConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub oauth_callback_url: String,
+    pub authorization_code: Option<String>,
+    pub refresh_interval: Duration,
 }

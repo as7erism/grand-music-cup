@@ -23,16 +23,16 @@ use url::Url;
 
 use crate::{
     api::{ApiState, init_api},
-    spotify::ClientConfig,
+    spotify::SpotifyClientConfig,
 };
 
-mod api;
-mod app;
+mod config;
 mod crypto;
 mod database;
 mod discord;
 mod snowflake;
 mod spotify;
+mod web;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -128,7 +128,7 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         panic!("jwt secret is required; generate one with --generate-secret");
     };
 
-    let spotify_client = ClientConfig {
+    let spotify_client = SpotifyClientConfig {
         client_id: args.spotify_client_id,
         client_secret: args.spotify_client_secret,
         oauth_callback_url: args.spotify_oauth_callback_url,
