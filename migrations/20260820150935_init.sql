@@ -7,6 +7,6 @@ CREATE TABLE IF NOT EXISTS users
   discord_id TEXT UNIQUE,
 
   login_name TEXT UNIQUE,
-  salt TEXT,
-  password_hash TEXT
+  salt BLOB,
+  password_hash BLOB
 );

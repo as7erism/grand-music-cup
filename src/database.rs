@@ -1,6 +1,6 @@
 use argon2::{
     Argon2, PasswordHasher,
-    password_hash::{self, Salt},
+    password_hash::{self, phc::Salt},
 };
 use base64::prelude::*;
 use rand::rngs::StdRng;
@@ -28,8 +28,8 @@ struct UserWithPassword {
     display_name: String,
     discord_id: Option<String>,
     login_name: Option<String>,
-    password_hash: Option<String>,
-    salt: Option<String>,
+    password_hash: Option<Vec<u8>>,
+    salt: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Error)]
@@ -131,10 +131,11 @@ impl User {
         rng: &mut StdRng,
         pool: &SqlitePool,
     ) -> Result<Self, DatabaseError> {
-        let salt = BASE64_STANDARD.encode(random_bytes::<SALT_LEN>(rng));
+        let salt = random_bytes::<SALT_LEN>(rng);
         let password_hash = Argon2::default()
-            .hash_password(password.as_bytes(), Salt::from_b64(&salt)?)?
-            .to_string();
+            .hash_password_with_salt(password.as_bytes(), &salt)?
+            .hash
+            .expect("we just hashed this");
         Ok(sqlx::query_as!(
             Self,
             "
@@ -145,8 +146,8 @@ impl User {
             snowflake_manager.make_snowflake(),
             display_name,
             login_name,
-            password_hash,
-            salt,
+            password_hash.as_bytes(),
+            salt.as_ref(),
         )
         .fetch_one(pool)
         .await?)
@@ -161,21 +162,20 @@ impl User {
             return Ok(None);
         };
 
-        if user
+        if **user
             .password_hash
             .as_ref()
             .expect("login name should always have associated password hash")
-            == Argon2::default()
-                .hash_password(
+            == *Argon2::default()
+                .hash_password_with_salt(
                     password.as_bytes(),
-                    Salt::from_b64(
-                        user.salt
-                            .as_ref()
-                            .expect("login name should always have associated salt"),
-                    )?,
+                    user.salt
+                        .as_ref()
+                        .expect("login name should always have associated salt"),
                 )?
-                .to_string()
-                .as_str()
+                .hash
+                .expect("we just computed the hash")
+                .as_bytes()
         {
             Ok(Some(user.into()))
         } else {
@@ -192,11 +192,11 @@ impl User {
     }
 
     pub fn login_name(&self) -> Option<&str> {
-        self.login_name.as_ref().map(|s| s.as_str())
+        self.login_name.as_deref()
     }
 
     pub fn discord_id(&self) -> Option<&str> {
-        self.discord_id.as_ref().map(|s| s.as_str())
+        self.discord_id.as_deref()
     }
 }
 

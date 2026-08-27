@@ -5,6 +5,7 @@ use url::Url;
 pub const SCOPES: [&str; 1] = ["identify"];
 pub const DISCORD_URL: &str = "https://discord.com";
 
+#[derive(Debug)]
 pub struct DiscordClient {
     pub client_id: String,
     pub client_secret: String,

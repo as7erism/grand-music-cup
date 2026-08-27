@@ -20,6 +20,7 @@ pub enum SnowflakeError {
     EpochInFuture,
 }
 
+#[derive(Debug)]
 pub struct SnowflakeManager {
     epoch: u64,
     machine_id: U10,

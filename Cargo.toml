@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-argon2 = "0.5.3"
+argon2 = "0.6"
 axum = { version = "0.8.9", features = ["json", "macros"] }
 axum-extra = { version = "0.12.6", features = ["cookie"] }
 base64 = "0.23.1"
@@ -24,6 +24,6 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.20"
 time = "0.3.55"
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
-tower-http = { version = "0.7.0", features = ["cors"] }
+tower-http = { version = "0.7.0", features = ["cors", "fs"] }
 url = "2.5.8"
 urlencoding = "2.1.3"

@@ -18,6 +18,7 @@ pub enum SpotifyError {
     IdError(#[from] IdError),
 }
 
+#[derive(Debug)]
 pub struct SpotifyClient {
     inner: Arc<AuthCodeSpotify>,
 }

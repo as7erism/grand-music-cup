@@ -7,7 +7,6 @@ use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use tokio::task::{JoinError, JoinSet};
 
 use crate::{
-    auth::Auth,
     discord::DiscordClient,
     snowflake::SnowflakeManager,
     spotify::{SpotifyClient, SpotifyClientConfig},
@@ -97,12 +96,13 @@ pub struct HttpsConfig {
     pub key_file: String,
 }
 
+#[derive(Debug)]
 pub struct WebConfig {
     pub discord_client: DiscordClient,
     pub spotify_client: SpotifyClient,
     pub pool: SqlitePool,
     pub snowflake_manager: SnowflakeManager,
-    pub auth: Auth,
+    pub jwt_secret: Box<[u8]>,
     pub server_url: Box<str>,
 }
 
@@ -159,7 +159,6 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
                 .expect("secret missing; TODO this should be mapped to a result"),
         )?
         .into_boxed_slice();
-    let auth = Auth::new(jwt_secret);
 
     let server_url = if config.https_config.is_some() {
         format! {"https://{}", config.server_address}.into_boxed_str()
@@ -172,7 +171,7 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
         discord_client,
         pool,
         snowflake_manager,
-        auth,
+        jwt_secret,
         server_url,
     };
 
