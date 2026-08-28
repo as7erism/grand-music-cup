@@ -10,16 +10,17 @@ fn header(page_title: &str, user: Option<&User>) -> Markup {
         link rel="stylesheet" href="/assets/style.css";
         title { (page_title) }
 
-        nav {
-            ul {
-                li { a href="/" { "grand music league" } }
+        nav .bg-pink-50.py-4.px-8.flex.items-center.justify-between.text-2xl {
+            div {
+                a href="/" .text-mauve-700.hover:text-mauve-500 { "grand music league" } 
             }
-            @if let Some(user) = user {
-                (user.display_name())
-            } @else {
-                ul {
-                    li { a href="/log-in" { "log in" } }
-                    li { a href="/sign-up" { "sign up" } }
+            div {
+                @if let Some(user) = user {
+                    (user.display_name())
+                } @else {
+                    a href="/log-in" .text-mauve-700.hover:text-mauve-500 { "log in" }
+                    " / "
+                    a href="/sign-up" .text-mauve-700.hover:text-mauve-500 { "sign up" }
                 }
             }
         }
@@ -27,9 +28,7 @@ fn header(page_title: &str, user: Option<&User>) -> Markup {
 }
 
 fn footer() -> Markup {
-    html! {
-        p { "hi" }
-    }
+    html! {}
 }
 
 pub fn page(page_title: &str, content: Markup, user: Option<&User>) -> Markup {

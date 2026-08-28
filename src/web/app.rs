@@ -111,7 +111,17 @@ fn discord_auth_url(server_url: &str) -> String {
 async fn index(user: Option<User>) -> Markup {
     page(
         "grand music cup",
-        html! { "welcome to my page" },
+        html! {
+            div .flex.justify-center.pt-12 {
+                @if user.is_some() {
+                    div .border.p-2 {
+                        a href="create-league" { "create a league" }
+                    }
+                } @else {
+                    "log in to create a league"
+                }
+            }
+        },
         user.as_ref(),
     )
 }
@@ -158,20 +168,33 @@ async fn post_log_in(
     user_token_response(&user, &state.config.jwt_secret, "/")
 }
 
-async fn get_log_in(user: Option<User>) -> Result<impl IntoResponse, AppError> {
+async fn get_log_in(user: Option<User>, State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     user.is_none().ok_or(AppError::LoggedIn)?;
 
-    Ok(html! {
-        form method="POST" {
-            label for="login name" { "login name:" }
-            input type="text" name="login_name" required {}
-            // label for="display name" { "your display name:" }
-            // input type="text" name="display name" required {}
-            label for="password" { "password:" }
-            input type="password" name="password" required {}
-            input type="submit" value="log in" {}
+    Ok(page("log in", html! {
+        div .flex.flex-col.items-center.pt-8 {
+            div .text-md {
+                a href=(&state.config.discord_client.get_authorization_url(&discord_auth_url(&state.config.server_url), None)) .text-mauve-700.hover:text-mauve-500.cursor-pointer {
+                    "log in with discord"
+                }
+                " or..."
+            }
+            div {
+                form method="POST" {
+                    label for="login name" .text-sm { "login name:" }
+                    br;
+                    input type="text" name="login_name" .border.p-1 required {}
+                    br;
+                    label for="password" .text-sm { "password:" }
+                    br;
+                    input type="password" name="password" .border.p-1 required {}
+                    div .flex.justify-center.pt-2 {
+                        input type="submit" .text-md.cursor-pointer.text-mauve-700.hover:text-mauve-500 value="log in" {}
+                    }
+                }
+            }
         }
-    })
+    }, user.as_ref()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -200,20 +223,39 @@ async fn post_sign_up(
     user_token_response(&user, &state.config.jwt_secret, "/")
 }
 
-async fn get_sign_up(user: Option<User>) -> Result<impl IntoResponse, AppError> {
+async fn get_sign_up(user: Option<User>, State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     user.is_none().ok_or(AppError::LoggedIn)?;
 
-    Ok(html! {
-        form method="POST" {
-            label for="login name" { "login name:" }
-            input type="text" name="login_name" required {}
-            label for="display name" { "display name:" }
-            input type="text" name="display_name" required {}
-            label for="password" { "password:" }
-            input type="password" name="password" required {}
-            input type="submit" value="log in" {}
+    Ok(page("sign up", html! {
+        div .flex.flex-col.items-center.pt-8 {
+            div .text-md {
+                a href=(
+                    &state.config.discord_client.get_authorization_url(&discord_auth_url(&state.config.server_url), None)
+                ) .text-mauve-700.hover:text-mauve-500.cursor-pointer {
+                    "sign up with discord"
+                }
+                " or..."
+            }
+            div {
+                form method="POST" {
+                    label for="login name" .text-sm { "login name:" }
+                    br;
+                    input type="text" name="login_name" .border.p-1 required {}
+                    br;
+                    label for="display name" .text-sm { "display name:" }
+                    br;
+                    input type="text" name="display_name" .border.p-1 required {}
+                    br;
+                    label for="password" .text-sm { "password:" }
+                    br;
+                    input type="password" name="password" .border.p-1 required {}
+                    div .flex.justify-center.pt-2 {
+                        input type="submit" .text-md.cursor-pointer.text-mauve-700.hover:text-mauve-500 value="sign up" {}
+                    }
+                }
+            }
         }
-    })
+    }, user.as_ref()))
 }
 
 async fn discord_auth(
