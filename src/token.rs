@@ -5,7 +5,7 @@ use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode}
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::database::{User, UserId};
+use crate::model::user::{User, UserId};
 
 pub const TOKEN_EXPIRATION_DAYS: u64 = 7;
 pub const HOURS_PER_DAY: u64 = 24;

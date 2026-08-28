@@ -14,8 +14,8 @@ use crate::{
 
 mod config;
 mod crypto;
-mod database;
 mod discord;
+mod model;
 mod snowflake;
 mod spotify;
 mod token;

@@ -20,15 +20,15 @@ pub enum SnowflakeError {
     EpochInFuture,
 }
 
-#[derive(Debug)]
-pub struct SnowflakeManager {
-    epoch: u64,
-    machine_id: U10,
+#[derive(Clone, Debug)]
+pub struct Snowflake {
+    epoch_ms: u64,
+    value: i64,
 }
 
-impl SnowflakeManager {
-    pub fn new(epoch: u64, machine_id: U10) -> Result<Self, SnowflakeError> {
-        if epoch
+impl Snowflake {
+    pub fn new_unique(epoch_ms: u64, machine_id: U10) -> Result<Self, SnowflakeError> {
+        if epoch_ms
             > SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("current time should be after unix epoch")
@@ -36,11 +36,11 @@ impl SnowflakeManager {
         {
             Err(SnowflakeError::EpochInFuture)
         } else {
-            Ok(Self { epoch, machine_id })
+            Ok(Self::make_raw(epoch_ms, machine_id))
         }
     }
 
-    pub fn make_snowflake(&self) -> i64 {
+    fn make_raw(epoch_ms: u64, machine_id: U10) -> Self {
         // we want to calculate the timestamp after updating (via Ordering::Acquire) to help
         // mitigate collision. hopefully this never comes up :3
         let counter = SNOWFLAKE_COUNTER.update(Ordering::Acquire, Ordering::Relaxed, |c| {
@@ -51,7 +51,7 @@ impl SnowflakeManager {
             .duration_since(UNIX_EPOCH)
             .expect("current time should be after unix epoch")
             .as_millis() as u64
-            - self.epoch) as i64;
+            - epoch_ms) as i64;
         if timestamp <= 0 {
             panic!("given epoch should be before the current time");
         }
@@ -63,30 +63,44 @@ impl SnowflakeManager {
         }
 
         let mut value = timestamp << (U10::BITS + SNOWFLAKE_COUNTER_BITS);
-        value |= (self.machine_id.as_u16() << SNOWFLAKE_COUNTER_BITS) as i64;
+        value |= (machine_id.as_u16() << SNOWFLAKE_COUNTER_BITS) as i64;
         value |= counter as i64;
-        value
+        Self { epoch_ms, value }
     }
 
-    pub fn parse_timestamp(&self, snowflake: i64) -> u64 {
-        ((snowflake & i64::MAX) >> (U10::BITS + SNOWFLAKE_COUNTER_BITS)) as u64
+    pub fn from_i64(value: i64, epoch_ms: u64) -> Result<Self, SnowflakeError> {
+        if epoch_ms
+            > SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("current time should be after unix epoch")
+                .as_millis() as u64
+        {
+            Err(SnowflakeError::EpochInFuture)
+        } else {
+            Ok(Self { epoch_ms, value })
+        }
     }
 
-    pub fn parse_machine_id(&self, snowflake: i64) -> U10 {
-        const MASK: i64 = (U10::MAX as i64) << SNOWFLAKE_COUNTER_BITS;
-        U10::new(((snowflake & MASK) >> SNOWFLAKE_COUNTER_BITS) as u16)
-            .expect("we should have masked out any extra bits")
+    pub fn as_i64(&self) -> i64 {
+        self.value
     }
 
-    pub fn parse_counter(&self, snowflake: i64) -> u16 {
-        (snowflake & SNOWFLAKE_COUNTER_MAX as i64) as u16
-    }
-
-    pub fn epoch(&self) -> u64 {
-        self.epoch
+    /// The time at which this snowflake was generated as milliseconds since `epoch_ms()`
+    pub fn timestamp_ms(&self) -> u64 {
+        ((self.value & i64::MAX) >> (U10::BITS + SNOWFLAKE_COUNTER_BITS)) as u64
     }
 
     pub fn machine_id(&self) -> U10 {
-        self.machine_id
+        const MASK: i64 = (U10::MAX as i64) << SNOWFLAKE_COUNTER_BITS;
+        U10::new(((self.value & MASK) >> SNOWFLAKE_COUNTER_BITS) as u16)
+            .expect("we should have masked out any extra bits")
+    }
+
+    pub fn counter(&self) -> u16 {
+        (self.value & SNOWFLAKE_COUNTER_MAX as i64) as u16
+    }
+
+    pub fn epoch_ms(&self) -> u64 {
+        self.epoch_ms
     }
 }

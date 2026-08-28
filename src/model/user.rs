@@ -1,14 +1,10 @@
-use argon2::{
-    Argon2, PasswordHasher,
-    password_hash::{self, phc::Salt},
-};
-use base64::prelude::*;
+use argon2::{Argon2, PasswordHasher};
+use grand_music_cup::U10;
 use rand::rngs::StdRng;
 use serde::Deserialize;
 use sqlx::SqlitePool;
-use thiserror::Error;
 
-use crate::{crypto::random_bytes, snowflake::SnowflakeManager};
+use crate::{crypto::random_bytes, model::ModelError, snowflake::Snowflake};
 
 const SALT_LEN: usize = 16;
 
@@ -32,28 +28,28 @@ struct UserWithPassword {
     salt: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Error)]
-pub enum DatabaseError {
-    #[error("sql error: {0}")]
-    SqlError(#[from] sqlx::Error),
-    #[error("password hash error: {0}")]
-    PasswordHashError(password_hash::Error),
-}
-
-impl From<password_hash::Error> for DatabaseError {
-    fn from(value: password_hash::Error) -> Self {
-        DatabaseError::PasswordHashError(value)
-    }
-}
-
+#[derive(Debug)]
 pub enum UserId<'a> {
     PrimaryKey(i64),
     LoginName(&'a str),
     DiscordId(&'a str),
 }
 
+#[derive(Debug, Deserialize)]
+pub struct LoginParams {
+    pub login_name: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SignUpParams {
+    pub login_name: String,
+    pub display_name: String,
+    pub password: String,
+}
+
 impl User {
-    pub async fn fetch(id: UserId<'_>, pool: &SqlitePool) -> Result<Option<Self>, DatabaseError> {
+    pub async fn fetch(id: UserId<'_>, pool: &SqlitePool) -> Result<Option<Self>, ModelError> {
         Ok(match id {
             UserId::PrimaryKey(k) => {
                 sqlx::query_as!(
@@ -81,7 +77,7 @@ impl User {
         })
     }
 
-    pub async fn exists(id: UserId<'_>, pool: &SqlitePool) -> Result<bool, DatabaseError> {
+    pub async fn exists(id: UserId<'_>, pool: &SqlitePool) -> Result<bool, ModelError> {
         Ok(match id {
             UserId::PrimaryKey(k) => {
                 sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", k)
@@ -103,11 +99,12 @@ impl User {
     }
 
     pub async fn create_with_discord_id(
-        snowflake_manager: &SnowflakeManager,
         display_name: &str,
         discord_id: &str,
+        epoch_ms: u64,
+        machine_id: U10,
         pool: &SqlitePool,
-    ) -> Result<Self, DatabaseError> {
+    ) -> Result<Self, ModelError> {
         Ok(sqlx::query_as!(
             Self,
             "
@@ -115,7 +112,7 @@ impl User {
         VALUES (?, ?, ?)
         RETURNING id, display_name, discord_id, login_name
         ",
-            snowflake_manager.make_snowflake(),
+            Snowflake::new_unique(epoch_ms, machine_id)?.as_i64(),
             display_name,
             discord_id
         )
@@ -124,16 +121,15 @@ impl User {
     }
 
     pub async fn create_with_login_name(
-        snowflake_manager: &SnowflakeManager,
-        display_name: &str,
-        login_name: &str,
-        password: &str,
+        params: &SignUpParams,
         rng: &mut StdRng,
+        epoch_ms: u64,
+        machine_id: U10,
         pool: &SqlitePool,
-    ) -> Result<Self, DatabaseError> {
+    ) -> Result<Self, ModelError> {
         let salt = random_bytes::<SALT_LEN>(rng);
         let password_hash = Argon2::default()
-            .hash_password_with_salt(password.as_bytes(), &salt)?
+            .hash_password_with_salt(params.password.as_bytes(), &salt)?
             .hash
             .expect("we just hashed this");
         Ok(sqlx::query_as!(
@@ -143,9 +139,9 @@ impl User {
         VALUES (?, ?, ?, ?, ?)
         RETURNING id, display_name, discord_id, login_name
         ",
-            snowflake_manager.make_snowflake(),
-            display_name,
-            login_name,
+            Snowflake::new_unique(epoch_ms, machine_id)?.as_i64(),
+            &params.display_name,
+            &params.login_name,
             password_hash.as_bytes(),
             salt.as_ref(),
         )
@@ -154,11 +150,10 @@ impl User {
     }
 
     pub async fn authenticate(
-        login_name: &str,
-        password: &str,
+        params: &LoginParams,
         pool: &SqlitePool,
-    ) -> Result<Option<Self>, DatabaseError> {
-        let Some(user) = UserWithPassword::fetch(login_name, pool).await? else {
+    ) -> Result<Option<Self>, ModelError> {
+        let Some(user) = UserWithPassword::fetch(&params.login_name, pool).await? else {
             return Ok(None);
         };
 
@@ -168,7 +163,7 @@ impl User {
             .expect("login name should always have associated password hash")
             == *Argon2::default()
                 .hash_password_with_salt(
-                    password.as_bytes(),
+                    params.password.as_bytes(),
                     user.salt
                         .as_ref()
                         .expect("login name should always have associated salt"),
@@ -201,7 +196,7 @@ impl User {
 }
 
 impl UserWithPassword {
-    async fn fetch(login_name: &str, pool: &SqlitePool) -> Result<Option<Self>, DatabaseError> {
+    async fn fetch(login_name: &str, pool: &SqlitePool) -> Result<Option<Self>, ModelError> {
         Ok(
             sqlx::query_as!(Self, "SELECT * FROM users WHERE login_name = ?", login_name)
                 .fetch_optional(pool)

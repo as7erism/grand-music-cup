@@ -18,15 +18,20 @@ use tokio::sync::Mutex;
 use crate::{
     APP_PATH,
     config::WebConfig,
-    database::{DatabaseError, User, UserId},
     discord::{DiscordError, DiscordUser},
+    model::{
+        ModelError,
+        user::{User, UserId},
+    },
     token::{TokenError, authenticate_user_token, generate_user_token},
     web::app::{AppError::LoggedIn, views::page},
 };
 
+mod auth;
+mod cup;
 mod views;
 
-const DISCORD_AUTH_PATH: &str = "/discord-auth";
+const AUTH_PATH: &str = "";
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -40,7 +45,7 @@ pub enum AppError {
     #[error("discord error: {0}")]
     DiscordError(#[from] DiscordError),
     #[error("database error: {0}")]
-    DatabaseError(#[from] DatabaseError),
+    DatabaseError(#[from] ModelError),
     #[error("unauthenticated")]
     Unauthenticated,
     #[error("already logged in")]
@@ -95,17 +100,7 @@ impl OptionalFromRequestParts<AppState> for User {
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(index))
-        .route(DISCORD_AUTH_PATH, get(discord_auth))
-        .route("/log-in", get(get_log_in))
-        .route("/log-in", post(post_log_in))
-        .route("/sign-up", get(get_sign_up))
-        .route("/sign-up", post(post_sign_up))
-}
-
-fn discord_auth_url(server_url: &str) -> String {
-    format!("{}{APP_PATH}{DISCORD_AUTH_PATH}", server_url)
+    Router::new().route("/", get(index)).merge(auth::routes())
 }
 
 async fn index(user: Option<User>) -> Markup {
@@ -115,172 +110,13 @@ async fn index(user: Option<User>) -> Markup {
             div .flex.justify-center.pt-12 {
                 @if user.is_some() {
                     div .border.p-2 {
-                        a href="create-league" { "create a league" }
+                        a href="create-cup" { "create a cup" }
                     }
                 } @else {
-                    "log in to create a league"
+                    "log in to create a cup"
                 }
             }
         },
         user.as_ref(),
     )
-}
-
-#[derive(Debug, Deserialize)]
-struct DiscordAuthParams {
-    code: String,
-}
-
-fn user_token_response(
-    user: &User,
-    jwt_secret: &[u8],
-    next_location: &str,
-) -> Result<Response, AppError> {
-    let (token, max_age) = generate_user_token(user, jwt_secret)?;
-    let cookie = Cookie::build(("token", token))
-        .path("/")
-        // TODO unify Duration across project
-        .max_age(SignedDuration::milliseconds(max_age.as_millis() as i64))
-        .build();
-    let mut response = Redirect::to(next_location).into_response();
-    response.headers_mut().insert(
-        SET_COOKIE,
-        HeaderValue::from_str(&cookie.to_string())
-            .expect("token header value should not be invalid"),
-    );
-
-    Ok(response)
-}
-
-#[derive(Debug, Deserialize)]
-struct LoginForm {
-    login_name: String,
-    password: String,
-}
-
-async fn post_log_in(
-    State(state): State<AppState>,
-    Form(form): Form<LoginForm>,
-) -> Result<impl IntoResponse, AppError> {
-    let user = User::authenticate(&form.login_name, &form.password, &state.config.pool)
-        .await?
-        .ok_or(AppError::Unauthenticated)?;
-    user_token_response(&user, &state.config.jwt_secret, "/")
-}
-
-async fn get_log_in(user: Option<User>, State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    user.is_none().ok_or(AppError::LoggedIn)?;
-
-    Ok(page("log in", html! {
-        div .flex.flex-col.items-center.pt-8 {
-            div .text-md {
-                a href=(&state.config.discord_client.get_authorization_url(&discord_auth_url(&state.config.server_url), None)) .text-mauve-700.hover:text-mauve-500.cursor-pointer {
-                    "log in with discord"
-                }
-                " or..."
-            }
-            div {
-                form method="POST" {
-                    label for="login name" .text-sm { "login name:" }
-                    br;
-                    input type="text" name="login_name" .border.p-1 required {}
-                    br;
-                    label for="password" .text-sm { "password:" }
-                    br;
-                    input type="password" name="password" .border.p-1 required {}
-                    div .flex.justify-center.pt-2 {
-                        input type="submit" .text-md.cursor-pointer.text-mauve-700.hover:text-mauve-500 value="log in" {}
-                    }
-                }
-            }
-        }
-    }, user.as_ref()))
-}
-
-#[derive(Debug, Deserialize)]
-struct SignUpForm {
-    login_name: String,
-    display_name: String,
-    password: String,
-}
-
-async fn post_sign_up(
-    State(state): State<AppState>,
-    Form(form): Form<SignUpForm>,
-) -> Result<impl IntoResponse, AppError> {
-    let my_rng = state.rng.clone();
-    let mut lock = my_rng.lock().await;
-    let user = User::create_with_login_name(
-        &state.config.snowflake_manager,
-        &form.display_name,
-        &form.login_name,
-        &form.password,
-        &mut lock,
-        &state.config.pool,
-    )
-    .await?;
-
-    user_token_response(&user, &state.config.jwt_secret, "/")
-}
-
-async fn get_sign_up(user: Option<User>, State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    user.is_none().ok_or(AppError::LoggedIn)?;
-
-    Ok(page("sign up", html! {
-        div .flex.flex-col.items-center.pt-8 {
-            div .text-md {
-                a href=(
-                    &state.config.discord_client.get_authorization_url(&discord_auth_url(&state.config.server_url), None)
-                ) .text-mauve-700.hover:text-mauve-500.cursor-pointer {
-                    "sign up with discord"
-                }
-                " or..."
-            }
-            div {
-                form method="POST" {
-                    label for="login name" .text-sm { "login name:" }
-                    br;
-                    input type="text" name="login_name" .border.p-1 required {}
-                    br;
-                    label for="display name" .text-sm { "display name:" }
-                    br;
-                    input type="text" name="display_name" .border.p-1 required {}
-                    br;
-                    label for="password" .text-sm { "password:" }
-                    br;
-                    input type="password" name="password" .border.p-1 required {}
-                    div .flex.justify-center.pt-2 {
-                        input type="submit" .text-md.cursor-pointer.text-mauve-700.hover:text-mauve-500 value="sign up" {}
-                    }
-                }
-            }
-        }
-    }, user.as_ref()))
-}
-
-async fn discord_auth(
-    State(state): State<AppState>,
-    Query(params): Query<DiscordAuthParams>,
-) -> Result<impl IntoResponse, AppError> {
-    let token = state
-        .config
-        .discord_client
-        .exchange_code_for_token(&params.code, &discord_auth_url(&state.config.server_url))
-        .await?;
-
-    let discord_user = DiscordUser::get(&token).await?;
-    let user = match User::fetch(UserId::DiscordId(&discord_user.id), &state.config.pool).await? {
-        Some(user) => user,
-        None => {
-            User::create_with_discord_id(
-                &state.config.snowflake_manager,
-                &discord_user.username,
-                &discord_user.id,
-                &state.config.pool,
-            )
-            .await?
-        }
-    };
-
-    user_token_response(&user, &state.config.jwt_secret, "/")
 }

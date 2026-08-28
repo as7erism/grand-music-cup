@@ -1,6 +1,9 @@
 use maud::{DOCTYPE, Markup, html};
 
-use crate::database::User;
+use crate::{
+    model::user::User,
+    web::app::auth::{LOG_IN_PATH, SIGN_UP_PATH},
+};
 
 fn header(page_title: &str, user: Option<&User>) -> Markup {
     html! {
@@ -12,15 +15,15 @@ fn header(page_title: &str, user: Option<&User>) -> Markup {
 
         nav .bg-pink-50.py-4.px-8.flex.items-center.justify-between.text-2xl {
             div {
-                a href="/" .text-mauve-700.hover:text-mauve-500 { "grand music league" } 
+                a href="/" .text-mauve-700.hover:text-mauve-500 { "grand music cup" }
             }
             div {
                 @if let Some(user) = user {
                     (user.display_name())
                 } @else {
-                    a href="/log-in" .text-mauve-700.hover:text-mauve-500 { "log in" }
+                    a href=(LOG_IN_PATH) .text-mauve-700.hover:text-mauve-500 { "log in" }
                     " / "
-                    a href="/sign-up" .text-mauve-700.hover:text-mauve-500 { "sign up" }
+                    a href=(SIGN_UP_PATH) .text-mauve-700.hover:text-mauve-500 { "sign up" }
                 }
             }
         }

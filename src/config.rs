@@ -8,7 +8,6 @@ use tokio::task::{JoinError, JoinSet};
 
 use crate::{
     discord::DiscordClient,
-    snowflake::SnowflakeManager,
     spotify::{SpotifyClient, SpotifyClientConfig},
 };
 
@@ -101,7 +100,8 @@ pub struct WebConfig {
     pub discord_client: DiscordClient,
     pub spotify_client: SpotifyClient,
     pub pool: SqlitePool,
-    pub snowflake_manager: SnowflakeManager,
+    pub machine_id: U10,
+    pub epoch_ms: u64,
     pub jwt_secret: Box<[u8]>,
     pub server_url: Box<str>,
 }
@@ -147,10 +147,8 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
         .connect(&config.database_url)
         .await?;
 
-    let snowflake_manager = SnowflakeManager::new(
-        config.epoch_ms,
-        U10::new(config.machine_id).expect("machine id overflow; TODO this should be a result"),
-    )?;
+    let machine_id =
+        U10::new(config.machine_id).expect("machine id overflow; TODO this should be a result");
 
     let jwt_secret = BASE64_STANDARD
         .decode(
@@ -170,7 +168,8 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
         spotify_client,
         discord_client,
         pool,
-        snowflake_manager,
+        epoch_ms: config.epoch_ms,
+        machine_id,
         jwt_secret,
         server_url,
     };
