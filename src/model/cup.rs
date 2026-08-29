@@ -2,8 +2,13 @@ use std::num::NonZeroU32;
 
 use rspotify::model::TrackId;
 use serde::Deserialize;
+use sqlx::SqlitePool;
+use time::{Duration, SignedDuration};
 
-use crate::model::user::{User, UserId};
+use crate::model::{
+    ModelError,
+    user::{User, UserId},
+};
 
 #[derive(Debug, Deserialize)]
 struct CupCreateParams {
@@ -24,6 +29,8 @@ pub struct RoundCreateParams {
 pub struct TrackSubmission<'u, 't> {
     user_id: UserId<'u>,
     track_id: TrackId<'t>,
+    pre_voting_note: Option<String>,
+    post_voting_note: Option<String>,
 }
 
 #[derive(Debug)]
@@ -33,29 +40,112 @@ pub struct Vote<'u> {
 }
 
 #[derive(Debug)]
-pub enum RoundPhase<'u, 't> {
+pub enum RoundPhase {
     NotStarted,
-    // TODO vec to mark mutability is interesting but probably doesn't matter -
-    // these can probably just be Boxes
-    Submission(Vec<TrackSubmission<'u, 't>>),
-    Voting(Vec<(TrackSubmission<'u, 't>, Vec<Vote<'u>>)>),
-    Finished(Box<[(TrackSubmission<'u, 't>, Box<[Vote<'u>]>)]>),
+    Submission,
+    Voting,
+    Finished,
 }
 
 #[derive(Debug)]
-pub struct Round<'u, 't> {
+pub struct Round {
     name: String,
     description: String,
-    phase: RoundPhase<'u, 't>,
+    phase: RoundPhase,
 }
 
 #[derive(Debug)]
-pub struct Cup<'u, 't> {
+pub struct Cup {
     id: i64,
     name: String,
-    owner: UserId<'u>,
-    current_round: Option<usize>,
-    rounds: Vec<Round<'u, 't>>,
-    timestamp_ms: u64,
-    players: Vec<UserId<'u>>,
+    description: Option<String>,
+    creation_timestamp_ms: u64,
+    owner: UserId<'static>,
+    max_players: Option<usize>,
+    current_round_number: Option<usize>,
+    submission_time: SignedDuration,
+    voting_time: SignedDuration,
+    next_action_timestamp_ms: Option<u64>,
+}
+
+impl Cup {
+    pub async fn fetch(id: i64, pool: &SqlitePool) -> Result<Self, ModelError> {
+        let response = sqlx::query!(
+            "
+        SELECT *
+        FROM cups
+        WHERE id = ?
+        ",
+            id
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok(Self {
+            id: response.id,
+            name: response.name,
+            description: response.description,
+            creation_timestamp_ms: response.creation_timestamp_ms as u64,
+            owner: UserId::PrimaryKey(response.owner_id),
+            max_players: response.max_players.map(|i| i as usize),
+            current_round_number: response.current_round_number.map(|i| i as usize),
+            submission_time: SignedDuration::milliseconds(response.submission_time_ms),
+            voting_time: SignedDuration::milliseconds(response.voting_time_ms),
+            next_action_timestamp_ms: response.next_action_timestamp_ms.map(|t| t as u64),
+        })
+    }
+
+    pub async fn participant_ids(
+        &self,
+        pool: &SqlitePool,
+    ) -> Result<Vec<(UserId<'static>, bool)>, ModelError> {
+        Ok(sqlx::query!(
+            "
+        SELECT user_id, did_leave
+        FROM cup_participants
+        WHERE cup_id = ?
+        ",
+            self.id
+        )
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|response| {
+            (
+                UserId::PrimaryKey(response.user_id),
+                response.did_leave != 0,
+            )
+        })
+        .collect())
+    }
+
+    pub async fn participants(&self, pool: &SqlitePool) -> Result<Vec<(User, bool)>, ModelError> {
+        Ok(sqlx::query!(
+            "
+        SELECT user_id, display_name, discord_id, login_name, did_leave
+        FROM cup_participants
+        JOIN users ON
+            cup_participants.user_id = users.id
+        WHERE cup_id = ?
+        ",
+            self.id
+        )
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|response| {
+            (
+                {
+                    User {
+                        id: response.user_id,
+                        display_name: response.display_name,
+                        discord_id: response.discord_id,
+                        login_name: response.login_name,
+                    }
+                },
+                response.did_leave != 0,
+            )
+        })
+        .collect())
+    }
 }

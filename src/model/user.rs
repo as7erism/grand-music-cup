@@ -11,10 +11,10 @@ const SALT_LEN: usize = 16;
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize)]
 pub struct User {
-    id: i64,
-    display_name: String,
-    discord_id: Option<String>,
-    login_name: Option<String>,
+    pub(super) id: i64,
+    pub(super) display_name: String,
+    pub(super) discord_id: Option<String>,
+    pub(super) login_name: Option<String>,
 }
 
 #[non_exhaustive]
