@@ -5,6 +5,7 @@ use std::{
 
 use grand_music_cup::U10;
 use thiserror::Error;
+use time::UtcDateTime;
 
 const TIMESTAMP_BITS: usize = 41;
 const SNOWFLAKE_COUNTER_BITS: usize = 12;
@@ -18,40 +19,33 @@ static SNOWFLAKE_COUNTER: AtomicU16 = AtomicU16::new(0);
 pub enum SnowflakeError {
     #[error("epoch should not be in the future")]
     EpochInFuture,
+    #[error("snowflake timestamp is out of range")]
+    TimestampOutOfRange,
 }
 
 #[derive(Clone, Debug)]
 pub struct Snowflake {
-    epoch_ms: u64,
+    epoch_ms: i64,
     value: i64,
 }
 
 impl Snowflake {
-    pub fn new_unique(epoch_ms: u64, machine_id: U10) -> Result<Self, SnowflakeError> {
-        if epoch_ms
-            > SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("current time should be after unix epoch")
-                .as_millis() as u64
-        {
+    pub fn new_unique(epoch: UtcDateTime, machine_id: U10) -> Result<Self, SnowflakeError> {
+        if epoch > UtcDateTime::now() {
             Err(SnowflakeError::EpochInFuture)
         } else {
-            Ok(Self::make_raw(epoch_ms, machine_id))
+            Ok(Self::make_raw(epoch.unix_timestamp(), machine_id))
         }
     }
 
-    fn make_raw(epoch_ms: u64, machine_id: U10) -> Self {
+    fn make_raw(epoch_ms: i64, machine_id: U10) -> Self {
         // we want to calculate the timestamp after updating (via Ordering::Acquire) to help
         // mitigate collision. hopefully this never comes up :3
         let counter = SNOWFLAKE_COUNTER.update(Ordering::Acquire, Ordering::Relaxed, |c| {
             if c == SNOWFLAKE_COUNTER_MAX { 0 } else { c + 1 }
         });
 
-        let timestamp = (SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("current time should be after unix epoch")
-            .as_millis() as u64
-            - epoch_ms) as i64;
+        let timestamp = UtcDateTime::now().unix_timestamp() - epoch_ms;
         if timestamp <= 0 {
             panic!("given epoch should be before the current time");
         }
@@ -68,16 +62,19 @@ impl Snowflake {
         Self { epoch_ms, value }
     }
 
-    pub fn from_i64(value: i64, epoch_ms: u64) -> Result<Self, SnowflakeError> {
-        if epoch_ms
-            > SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("current time should be after unix epoch")
-                .as_millis() as u64
-        {
+    pub fn from_i64(epoch: UtcDateTime, value: i64) -> Result<Self, SnowflakeError> {
+        if epoch > UtcDateTime::now() {
             Err(SnowflakeError::EpochInFuture)
         } else {
-            Ok(Self { epoch_ms, value })
+            let snowflake = Self {
+                value,
+                epoch_ms: epoch.unix_timestamp(),
+            };
+            snowflake.validate()?;
+            Ok(Self {
+                value,
+                epoch_ms: epoch.unix_timestamp(),
+            })
         }
     }
 
@@ -85,9 +82,24 @@ impl Snowflake {
         self.value
     }
 
-    /// The time at which this snowflake was generated as milliseconds since `epoch_ms()`
-    pub fn timestamp_ms(&self) -> u64 {
-        ((self.value & i64::MAX) >> (U10::BITS + SNOWFLAKE_COUNTER_BITS)) as u64
+    fn timestamp_ms(&self) -> i64 {
+        (self.value & i64::MAX) >> (U10::BITS + SNOWFLAKE_COUNTER_BITS)
+    }
+
+    fn validate(&self) -> Result<(), SnowflakeError> {
+        let _ = UtcDateTime::from_unix_timestamp(
+            self.timestamp_ms()
+                .checked_add(self.epoch_ms)
+                .ok_or(SnowflakeError::TimestampOutOfRange)?,
+        )
+        .map_err(|_| SnowflakeError::TimestampOutOfRange)?;
+        Ok(())
+    }
+
+    /// The time at which this snowflake was generated
+    pub fn timestamp(&self) -> UtcDateTime {
+        UtcDateTime::from_unix_timestamp(self.timestamp_ms() + self.epoch_ms)
+            .expect("we should have validated this")
     }
 
     pub fn machine_id(&self) -> U10 {
@@ -100,7 +112,7 @@ impl Snowflake {
         (self.value & SNOWFLAKE_COUNTER_MAX as i64) as u16
     }
 
-    pub fn epoch_ms(&self) -> u64 {
-        self.epoch_ms
+    pub fn epoch(&self) -> UtcDateTime {
+        UtcDateTime::from_unix_timestamp(self.epoch_ms).expect("stored epoch should be in range")
     }
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{FromRequestParts, OptionalFromRequestParts},
+    extract::{FromRequestParts, OptionalFromRequestParts, State},
     response::{IntoResponse, Redirect},
     routing::get,
 };
@@ -14,21 +14,22 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 
 use crate::{
+    APP_PATH,
     config::WebConfig,
     discord::DiscordError,
-    model::{
-        ModelError,
-        user::User,
-    },
+    model::{ModelError, user::User},
     token::{TokenError, authenticate_user_token},
-    web::app::views::page,
+    web::app::views::static_page,
 };
 
 mod auth;
 mod cup;
 mod views;
 
+pub use cup::CUP_CREATE_PATH;
+
 const AUTH_PATH: &str = "";
+const CUP_PATH: &str = "/cup";
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -97,17 +98,20 @@ impl OptionalFromRequestParts<AppState> for User {
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/", get(index)).merge(auth::routes())
+    Router::new()
+        .route("/", get(index))
+        .merge(auth::routes())
+        .nest(CUP_PATH, cup::routes())
 }
 
-async fn index(user: Option<User>) -> Markup {
-    page(
+async fn index(user: Option<User>, State(state): State<AppState>) -> Markup {
+    static_page(
         "grand music cup",
         html! {
             div .flex.justify-center.pt-12 {
                 @if user.is_some() {
                     div .border.p-2 {
-                        a href="create-cup" { "create a cup" }
+                        a href=(format!{"{}{APP_PATH}{CUP_PATH}{CUP_CREATE_PATH}", &state.config.server_url}) { "create a cup" }
                     }
                 } @else {
                     "log in to create a cup"

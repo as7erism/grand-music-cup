@@ -3,6 +3,7 @@ use grand_music_cup::U10;
 use rand::rngs::StdRng;
 use serde::Deserialize;
 use sqlx::SqlitePool;
+use time::UtcDateTime;
 
 use crate::{crypto::random_bytes, model::ModelError, snowflake::Snowflake};
 
@@ -15,6 +16,55 @@ pub struct User {
     pub(super) display_name: String,
     pub(super) discord_id: Option<String>,
     pub(super) login_name: Option<String>,
+}
+
+impl UserId<'_> {
+    pub async fn exists(&self, pool: &SqlitePool) -> Result<bool, ModelError> {
+        Ok(match self {
+            Self::PrimaryKey(key) => {
+                sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", key)
+                    .fetch_one(pool)
+                    .await
+            }
+            Self::LoginName(name) => {
+                sqlx::query_scalar!(
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE login_name = ?)",
+                    name
+                )
+                .fetch_one(pool)
+                .await
+            }
+            Self::DiscordId(id) => {
+                sqlx::query_scalar!(
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE discord_id = ?)",
+                    id
+                )
+                .fetch_one(pool)
+                .await
+            }
+        }
+        .map(|b| b != 0)?)
+    }
+
+    pub async fn to_primary_key(&self, pool: &SqlitePool) -> Result<i64, ModelError> {
+        Ok(match self {
+            Self::PrimaryKey(key) => {
+                sqlx::query_scalar!("SELECT id FROM users WHERE id = ?", key)
+                    .fetch_one(pool)
+                    .await?
+            }
+            Self::LoginName(name) => {
+                sqlx::query_scalar!("SELECT id FROM users WHERE login_name = ?", name)
+                    .fetch_one(pool)
+                    .await?
+            }
+            Self::DiscordId(id) => {
+                sqlx::query_scalar!("SELECT id FROM users WHERE discord_id = ?", id)
+                    .fetch_one(pool)
+                    .await?
+            }
+        })
+    }
 }
 
 #[non_exhaustive]
@@ -77,31 +127,10 @@ impl User {
         })
     }
 
-    pub async fn exists(id: UserId<'_>, pool: &SqlitePool) -> Result<bool, ModelError> {
-        Ok(match id {
-            UserId::PrimaryKey(k) => {
-                sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", k)
-                    .fetch_one(pool)
-                    .await
-            }
-            UserId::LoginName(l) => {
-                sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM users WHERE login_name = ?)", l)
-                    .fetch_one(pool)
-                    .await
-            }
-            UserId::DiscordId(d) => {
-                sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM users WHERE discord_id = ?)", d)
-                    .fetch_one(pool)
-                    .await
-            }
-        }
-        .map(|b| b != 0)?)
-    }
-
     pub async fn create_with_discord_id(
         display_name: &str,
         discord_id: &str,
-        epoch_ms: u64,
+        epoch: UtcDateTime,
         machine_id: U10,
         pool: &SqlitePool,
     ) -> Result<Self, ModelError> {
@@ -112,7 +141,7 @@ impl User {
         VALUES (?, ?, ?)
         RETURNING id, display_name, discord_id, login_name
         ",
-            Snowflake::new_unique(epoch_ms, machine_id)?.as_i64(),
+            Snowflake::new_unique(epoch, machine_id)?.as_i64(),
             display_name,
             discord_id
         )
@@ -123,7 +152,7 @@ impl User {
     pub async fn create_with_login_name(
         params: &SignUpParams,
         rng: &mut StdRng,
-        epoch_ms: u64,
+        epoch: UtcDateTime,
         machine_id: U10,
         pool: &SqlitePool,
     ) -> Result<Self, ModelError> {
@@ -139,7 +168,7 @@ impl User {
         VALUES (?, ?, ?, ?, ?)
         RETURNING id, display_name, discord_id, login_name
         ",
-            Snowflake::new_unique(epoch_ms, machine_id)?.as_i64(),
+            Snowflake::new_unique(epoch, machine_id)?.as_i64(),
             &params.display_name,
             &params.login_name,
             password_hash.as_bytes(),

@@ -17,14 +17,15 @@ CREATE TABLE IF NOT EXISTS cups
 (
   id INTEGER PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
-  description TEXT,
-  creation_timestamp_ms INTEGER NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   owner_id INTEGER NOT NULL,
-  max_players INTEGER CHECK(max_players > 0),
+  max_players INTEGER CHECK(max_players > 1 AND max_players < 200),
+
+  vote_allocation INTEGER NOT NULL CHECK(vote_allocation > 0 AND vote_allocation < 100),
+  submission_time_ms INTEGER NOT NULL CHECK(submission_time_ms > 0 AND submission_time_ms < 1209600000), -- two weeks
+  voting_time_ms INTEGER NOT NULL CHECK(voting_time_ms > 0 AND voting_time_ms < 1209600000), -- two weeks
 
   current_round_number INTEGER,
-  submission_time_ms INTEGER NOT NULL,
-  voting_time_ms INTEGER NOT NULL,
   next_action_timestamp_ms INTEGER,
 
   FOREIGN KEY(owner_id) REFERENCES users(id)
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS rounds
   round_number INTEGER NOT NULL,
   cup_id INTEGER NOT NULL,
   name TEXT NOT NULL,
-  description TEXT,
+  description TEXT NOT NULL DEFAULT '',
   phase TEXT CHECK(phase in ('NotStarted', 'Submission', 'Voting', 'Finished')) NOT NULL DEFAULT 'NotStarted',
 
   FOREIGN KEY(cup_id) REFERENCES cups(id),
@@ -49,8 +50,8 @@ CREATE TABLE IF NOT EXISTS round_submissions
   user_id INTEGER NOT NULL,
   cup_id INTEGER NOT NULL,
   track_id TEXT NOT NULL,
-  pre_voting_note TEXT,
-  post_voting_note TEXT,
+  pre_voting_note TEXT NOT NULL DEFAULT '',
+  post_voting_note TEXT NOT NULL DEFAULT '',
 
   FOREIGN KEY(round_number, cup_id) REFERENCES rounds(round_number, cup_id),
   FOREIGN KEY(user_id, cup_id) REFERENCES cup_participants(user_id, cup_id),
@@ -76,7 +77,7 @@ CREATE TABLE IF NOT EXISTS cup_participants
 (
   user_id INTEGER NOT NULL,
   cup_id INTEGER NOT NULL,
-  did_leave INTEGER NOT NULL DEFAULT FALSE,
+  is_active INTEGER NOT NULL DEFAULT TRUE,
 
   FOREIGN KEY(user_id) REFERENCES users(id),
   FOREIGN KEY(cup_id) REFERENCES cups(id),

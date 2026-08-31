@@ -13,7 +13,7 @@ use crate::APP_PATH;
 use crate::discord::DiscordUser;
 use crate::model::user::{LoginParams, SignUpParams, User, UserId};
 use crate::token::generate_user_token;
-use crate::web::app::views::page;
+use crate::web::app::views::static_page;
 use crate::web::app::{AUTH_PATH, AppError, AppState};
 
 pub const LOG_IN_PATH: &str = "/log-in";
@@ -75,7 +75,7 @@ async fn get_log_in(
 ) -> Result<impl IntoResponse, AppError> {
     user.is_none().ok_or(AppError::LoggedIn)?;
 
-    Ok(page(
+    Ok(static_page(
         "log in",
         html! {
             div .flex.flex-col.items-center.pt-8 {
@@ -87,7 +87,7 @@ async fn get_log_in(
                 }
                 div {
                     form method="POST" {
-                        label for="login name" .text-sm { "login name:" }
+                        label for="login_name" .text-sm { "login name:" }
                         br;
                         input type="text" name="login_name" .border.p-1 required {}
                         br;
@@ -114,7 +114,7 @@ async fn post_sign_up(
     let user = User::create_with_login_name(
         &form,
         &mut lock,
-        state.config.epoch_ms,
+        state.config.epoch,
         state.config.machine_id,
         &state.config.pool,
     )
@@ -129,7 +129,7 @@ async fn get_sign_up(
 ) -> Result<impl IntoResponse, AppError> {
     user.is_none().ok_or(AppError::LoggedIn)?;
 
-    Ok(page(
+    Ok(static_page(
         "sign up",
         html! {
             div .flex.flex-col.items-center.pt-8 {
@@ -143,11 +143,11 @@ async fn get_sign_up(
                 }
                 div {
                     form method="POST" {
-                        label for="login name" .text-sm { "login name:" }
+                        label for="login_name" .text-sm { "login name:" }
                         br;
                         input type="text" name="login_name" .border.p-1 required {}
                         br;
-                        label for="display name" .text-sm { "display name:" }
+                        label for="display_name" .text-sm { "display name:" }
                         br;
                         input type="text" name="display_name" .border.p-1 required {}
                         br;
@@ -182,7 +182,7 @@ async fn discord_auth(
             User::create_with_discord_id(
                 &discord_user.username,
                 &discord_user.id,
-                state.config.epoch_ms,
+                state.config.epoch,
                 state.config.machine_id,
                 &state.config.pool,
             )

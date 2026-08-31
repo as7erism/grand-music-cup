@@ -4,6 +4,7 @@ use base64::prelude::*;
 use clap::{Args, Parser};
 use grand_music_cup::U10;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use time::{UtcDateTime, format_description::well_known::Iso8601};
 use tokio::task::{JoinError, JoinSet};
 
 use crate::{
@@ -72,9 +73,14 @@ struct Config {
     #[arg(short, long, env = "JWT_SECRET")]
     jwt_secret: Option<String>,
 
-    /// The epoch as milliseconds since the unix epoch
-    #[arg(short = 'p', long, env = "EPOCH_MS", default_value_t = 1787681355986)]
-    epoch_ms: u64,
+    /// The epoch, formatted according to ISO-8601
+    #[arg(
+        short = 'p',
+        long,
+        env = "EPOCH",
+        default_value = "2026-01-01T00:00:00.000"
+    )]
+    epoch: String,
 
     /// The machine ID (should fit within 10 bits)
     #[arg(short, long, env = "MACHINE_ID", default_value_t = 0)]
@@ -101,7 +107,7 @@ pub struct WebConfig {
     pub spotify_client: SpotifyClient,
     pub pool: SqlitePool,
     pub machine_id: U10,
-    pub epoch_ms: u64,
+    pub epoch: UtcDateTime,
     pub jwt_secret: Box<[u8]>,
     pub server_url: Box<str>,
 }
@@ -147,6 +153,8 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
         .connect(&config.database_url)
         .await?;
 
+    let epoch = UtcDateTime::parse(&config.epoch, &Iso8601::DEFAULT)?;
+
     let machine_id =
         U10::new(config.machine_id).expect("machine id overflow; TODO this should be a result");
 
@@ -168,7 +176,7 @@ pub async fn get_config() -> Result<Mode, Box<dyn Error + Send + Sync>> {
         spotify_client,
         discord_client,
         pool,
-        epoch_ms: config.epoch_ms,
+        epoch,
         machine_id,
         jwt_secret,
         server_url,

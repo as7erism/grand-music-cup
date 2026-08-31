@@ -7,6 +7,7 @@ use crate::{
     config::Mode,
     crypto::{init_rng, random_bytes},
     web::{
+        api,
         app::{self, AppState},
         assets,
     },
@@ -42,7 +43,7 @@ pub async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let rng = Arc::new(Mutex::new(init_rng()));
     let routes = Router::new()
         .merge(app::routes())
-        // .nest(API_PATH, api::routes())
+        .nest(API_PATH, api::routes())
         .with_state(AppState {
             config: web_config.clone(),
             rng: rng.clone(),
