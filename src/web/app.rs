@@ -1,30 +1,27 @@
-use std::{ops::DerefMut, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
-    Form, Router,
-    extract::{FromRequestParts, OptionalFromRequestParts, Query, State},
-    response::{IntoResponse, Redirect, Response},
-    routing::{get, post},
+    Router,
+    extract::{FromRequestParts, OptionalFromRequestParts},
+    response::{IntoResponse, Redirect},
+    routing::get,
 };
-use axum_extra::extract::{CookieJar, cookie::Cookie};
-use http::{HeaderValue, StatusCode, header::SET_COOKIE};
+use axum_extra::extract::CookieJar;
+use http::StatusCode;
 use maud::{Markup, html};
 use rand::rngs::StdRng;
-use serde::Deserialize;
 use thiserror::Error;
-use time::SignedDuration;
 use tokio::sync::Mutex;
 
 use crate::{
-    APP_PATH,
     config::WebConfig,
-    discord::{DiscordError, DiscordUser},
+    discord::DiscordError,
     model::{
         ModelError,
-        user::{User, UserId},
+        user::User,
     },
-    token::{TokenError, authenticate_user_token, generate_user_token},
-    web::app::{AppError::LoggedIn, views::page},
+    token::{TokenError, authenticate_user_token},
+    web::app::views::page,
 };
 
 mod auth;

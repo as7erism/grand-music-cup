@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use rspotify::model::TrackId;
 use serde::Deserialize;
 use sqlx::SqlitePool;
-use time::{Duration, SignedDuration};
+use time::SignedDuration;
 
 use crate::model::{
     ModelError,

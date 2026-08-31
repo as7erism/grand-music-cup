@@ -1,4 +1,4 @@
-use std::{collections::HashSet, convert::Infallible, process::exit, sync::Arc, time::Duration};
+use std::{collections::HashSet, convert::Infallible, sync::Arc, time::Duration};
 
 use rspotify::{
     AuthCodeSpotify, ClientError, Credentials, OAuth,
